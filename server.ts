@@ -8,7 +8,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = 4260; //changed this because i have a lot of npm apps trying to run on 3000. need to update reademe.md for this config warning.
 
 app.use(express.json({ limit: "25mb" }));
 
