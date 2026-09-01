@@ -1,0 +1,6 @@
+{
+  "name": "Is it Pink?",
+  "description": "What color is your audiobook shelf? Interactive dominant cover color treemap visualizer and reading library analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
