@@ -2,12 +2,13 @@ module.exports = {
   apps: [
     {
       name: "is-it-pink",
-      cwd: "/PATH/TO/is-it-pink", //remember to add instructions for this to readme.md as well 
+      cwd: "/PATH/TO/is-it-pink", // Update this to the absolute path of your is-it-pink directory (e.g. /home/user/is-it-pink)
       script: "./dist/server.cjs",
       exec_mode: "fork",
       env: {
         NODE_ENV: "production",
-        //HOST: "192.168.68.102" //OPTIONAL IF YOU WANT TO BIND IT
+        PORT: 4260
+        // HOST: "192.168.68.102" // Optional: Bind to specific IP address if desired
       }
     }
   ]
