@@ -11,6 +11,173 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4260; // Defaul
 
 app.use(express.json({ limit: "25mb" }));
 
+// Persistent Local App Folder for Saved Maps
+const SAVED_MAPS_DIR = path.join(process.cwd(), "data", "saved-maps");
+if (!fs.existsSync(SAVED_MAPS_DIR)) {
+  try {
+    fs.mkdirSync(SAVED_MAPS_DIR, { recursive: true });
+  } catch (err) {
+    console.warn("Could not create saved-maps directory:", err);
+  }
+}
+
+export function sanitizeServerUrlToFilename(urlOrPath: string): string {
+  if (!urlOrPath) return "audiobook-library";
+  let clean = urlOrPath.trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/[:/\\?#%&*=+\s]+/g, "_")
+    .replace(/[^a-zA-Z0-9._-]/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "");
+  return clean || "audiobook-library";
+}
+
+// API: Save map to local app folder as [server-url]-data.json
+app.post("/api/save-map", (req, res) => {
+  try {
+    const { nameOrPath, serverUrl, username, mode, audiobooks, totalDurationHours, totalSizeBytes, customFilename } = req.body;
+    
+    if (!Array.isArray(audiobooks) || audiobooks.length === 0) {
+      return res.status(400).json({ error: "No audiobooks provided to save" });
+    }
+
+    const baseName = customFilename || `${sanitizeServerUrlToFilename(serverUrl || nameOrPath || "audiobook-library")}-data.json`;
+    const filename = baseName.endsWith(".json") ? baseName : `${baseName}.json`;
+    const targetFilePath = path.join(SAVED_MAPS_DIR, filename);
+
+    const calculatedHours = typeof totalDurationHours === "number"
+      ? totalDurationHours
+      : audiobooks.reduce((acc: number, b: any) => acc + (b.durationHours || 0), 0);
+    const calculatedBytes = typeof totalSizeBytes === "number"
+      ? totalSizeBytes
+      : audiobooks.reduce((acc: number, b: any) => acc + (b.fileSizeBytes || 0), 0);
+
+    const mapPackage = {
+      version: "1.0",
+      appName: "is-it-pink",
+      exportDate: new Date().toISOString(),
+      nameOrPath: nameOrPath || serverUrl || "Audiobook Library",
+      serverUrl: serverUrl || null,
+      username: username || null,
+      mode: mode || "entireLibrary",
+      bookCount: audiobooks.length,
+      totalDurationHours: Math.round(calculatedHours * 10) / 10,
+      totalSizeBytes: calculatedBytes,
+      audiobooks
+    };
+
+    fs.writeFileSync(targetFilePath, JSON.stringify(mapPackage, null, 2), "utf8");
+
+    res.json({
+      success: true,
+      filename,
+      filePath: targetFilePath,
+      savedAt: mapPackage.exportDate,
+      packageSummary: {
+        filename,
+        serverUrl: mapPackage.serverUrl,
+        username: mapPackage.username,
+        nameOrPath: mapPackage.nameOrPath,
+        bookCount: mapPackage.bookCount,
+        totalDurationHours: mapPackage.totalDurationHours,
+        mode: mapPackage.mode,
+        exportDate: mapPackage.exportDate
+      }
+    });
+  } catch (error: any) {
+    console.error("Save map error:", error);
+    res.status(500).json({ error: error.message || "Failed to save map data" });
+  }
+});
+
+// API: List all saved map files in local app folder
+app.get("/api/saved-maps", (req, res) => {
+  try {
+    if (!fs.existsSync(SAVED_MAPS_DIR)) {
+      return res.json({ success: true, files: [] });
+    }
+
+    const dirEntries = fs.readdirSync(SAVED_MAPS_DIR);
+    const fileList: any[] = [];
+
+    for (const fileName of dirEntries) {
+      if (!fileName.endsWith(".json")) continue;
+      const fullPath = path.join(SAVED_MAPS_DIR, fileName);
+      try {
+        const stats = fs.statSync(fullPath);
+        const rawContent = fs.readFileSync(fullPath, "utf8");
+        const parsed = JSON.parse(rawContent);
+
+        fileList.push({
+          filename: fileName,
+          serverUrl: parsed.serverUrl || null,
+          username: parsed.username || null,
+          nameOrPath: parsed.nameOrPath || parsed.path || fileName.replace(/-data\.json$/, ""),
+          bookCount: parsed.bookCount || (Array.isArray(parsed.audiobooks) ? parsed.audiobooks.length : 0),
+          totalDurationHours: parsed.totalDurationHours || 0,
+          mode: parsed.mode || "entireLibrary",
+          exportDate: parsed.exportDate || stats.mtime.toISOString(),
+          fileSizeBytes: stats.size,
+          mtime: stats.mtime.toISOString()
+        });
+      } catch (e) {
+        console.warn(`Could not parse map file ${fileName}:`, e);
+      }
+    }
+
+    // Sort by latest modified/exported date descending
+    fileList.sort((a, b) => new Date(b.exportDate || b.mtime).getTime() - new Date(a.exportDate || a.mtime).getTime());
+
+    res.json({
+      success: true,
+      files: fileList
+    });
+  } catch (error: any) {
+    console.error("List saved maps error:", error);
+    res.status(500).json({ error: error.message || "Failed to list saved maps" });
+  }
+});
+
+// API: Get specific saved map by filename
+app.get("/api/saved-maps/:filename", (req, res) => {
+  try {
+    const filename = path.basename(req.params.filename);
+    const fullPath = path.join(SAVED_MAPS_DIR, filename);
+
+    if (!fs.existsSync(fullPath)) {
+      return res.status(404).json({ error: "Saved map file not found" });
+    }
+
+    const content = fs.readFileSync(fullPath, "utf8");
+    const parsed = JSON.parse(content);
+
+    res.json({
+      success: true,
+      data: parsed
+    });
+  } catch (error: any) {
+    console.error("Get saved map error:", error);
+    res.status(500).json({ error: error.message || "Failed to read map file" });
+  }
+});
+
+// API: Delete a saved map file
+app.delete("/api/saved-maps/:filename", (req, res) => {
+  try {
+    const filename = path.basename(req.params.filename);
+    const fullPath = path.join(SAVED_MAPS_DIR, filename);
+
+    if (fs.existsSync(fullPath)) {
+      fs.unlinkSync(fullPath);
+    }
+
+    res.json({ success: true, deleted: filename });
+  } catch (error: any) {
+    console.error("Delete saved map error:", error);
+    res.status(500).json({ error: error.message || "Failed to delete map file" });
+  }
+});
+
 // API: Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });

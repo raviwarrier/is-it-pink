@@ -3,9 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Audiobook } from '../types';
 import { formatHours, formatBytes } from '../utils/colorUtils';
+import { normalizeAudiobook } from '../utils/treemapUtils';
+import { BookCoverOrColorBlock } from './BookCoverOrColorBlock';
 import { 
   X, 
   Play, 
@@ -20,10 +22,8 @@ import {
   Star, 
   Sparkles, 
   Layers, 
-  FileText,
-  Radio,
-  Image as ImageIcon,
-  CheckCircle2
+  FileText, 
+  Image as ImageIcon 
 } from 'lucide-react';
 
 interface AudiobookDetailModalProps {
@@ -35,7 +35,7 @@ interface AudiobookDetailModalProps {
 }
 
 export const AudiobookDetailModal: React.FC<AudiobookDetailModalProps> = ({
-  audiobook,
+  audiobook: rawAudiobook,
   onClose,
   onFilterGenre,
   onFilterAuthor,
@@ -44,12 +44,10 @@ export const AudiobookDetailModal: React.FC<AudiobookDetailModalProps> = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackProgress, setPlaybackProgress] = useState(15);
   const [copiedHex, setCopiedHex] = useState<string | null>(null);
-  const [imageLoadError, setImageLoadError] = useState(false);
 
-  // Reset image error state whenever selected audiobook changes
-  useEffect(() => {
-    setImageLoadError(false);
-  }, [audiobook?.id]);
+  const audiobook = useMemo(() => {
+    return rawAudiobook ? normalizeAudiobook(rawAudiobook) : null;
+  }, [rawAudiobook]);
 
   // Playback timer simulator
   useEffect(() => {
@@ -70,15 +68,11 @@ export const AudiobookDetailModal: React.FC<AudiobookDetailModalProps> = ({
     setTimeout(() => setCopiedHex(null), 1500);
   };
 
-  // Safe fallback cover SVG in case an uploaded local image path fails or is unlinked
-  const fallbackCoverSvg = `data:image/svg+xml;utf8,${encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 600" width="400" height="600">
-      <rect width="400" height="600" fill="${audiobook.dominantColor.hex}" />
-      <circle cx="200" cy="240" r="100" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="2" />
-      <text x="200" y="320" font-family="'Plus Jakarta Sans', sans-serif" font-size="24" font-weight="700" fill="#ffffff" text-anchor="middle">${audiobook.title.slice(0, 20)}</text>
-      <text x="200" y="360" font-family="'Plus Jakarta Sans', sans-serif" font-size="16" font-weight="500" fill="rgba(255,255,255,0.8)" text-anchor="middle">${audiobook.author}</text>
-    </svg>`
-  )}`;
+  const hex = audiobook.dominantColor?.hex || '#3b82f6';
+  const colorName = audiobook.dominantColor?.colorName || 'Shade';
+  const colorFamily = audiobook.dominantColor?.colorFamily || 'Color';
+  const rgb = audiobook.dominantColor?.rgb || [59, 130, 246];
+  const palette = audiobook.palette || [{ hex, colorName, percentage: 100, rgb }];
 
   return (
     <div id="audiobook-detail-backdrop" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
@@ -91,10 +85,10 @@ export const AudiobookDetailModal: React.FC<AudiobookDetailModalProps> = ({
           <div className="flex items-center gap-2.5">
             <span 
               className="w-3.5 h-3.5 rounded-full border border-white/20 shadow-sm shrink-0"
-              style={{ backgroundColor: audiobook.dominantColor.hex }}
+              style={{ backgroundColor: hex }}
             />
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300">
-              Level 3 • {audiobook.dominantColor.colorName} ({audiobook.dominantColor.hex}) • {audiobook.dominantColor.colorFamily} Palette
+              Level 3 • {colorName} ({hex}) • {colorFamily} Palette
             </span>
           </div>
           <button
@@ -109,15 +103,12 @@ export const AudiobookDetailModal: React.FC<AudiobookDetailModalProps> = ({
         <div className="p-6 overflow-y-auto space-y-6">
           
           <div className="flex flex-col md:flex-row gap-6">
-            {/* Left: High-Res Cover Visual from Filesystem */}
+            {/* Left: High-Res Cover Visual from Filesystem or Solid Color Block */}
             <div className="w-full md:w-64 shrink-0 space-y-3">
-              <div className="w-full aspect-[4/5] rounded-2xl overflow-hidden bg-[#0F1115] border border-white/10 shadow-2xl relative group">
-                <img
-                  src={imageLoadError ? fallbackCoverSvg : audiobook.coverUrl}
-                  alt={audiobook.title}
-                  onError={() => setImageLoadError(true)}
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover"
+              <div className="w-full rounded-2xl overflow-hidden bg-[#0F1115] border border-white/10 shadow-2xl relative">
+                <BookCoverOrColorBlock 
+                  book={audiobook} 
+                  variant="detail-hero"
                 />
               </div>
 
@@ -128,28 +119,28 @@ export const AudiobookDetailModal: React.FC<AudiobookDetailModalProps> = ({
                   <span className="font-semibold text-slate-300">Cover Artwork Source:</span>
                 </div>
                 <p className="text-[10px] font-mono text-slate-400 break-all leading-tight">
-                  {audiobook.coverPath || `${audiobook.folderPath}/cover.jpg`}
+                  {audiobook.coverPath || (audiobook.folderPath ? `${audiobook.folderPath}/cover.jpg` : 'Extracted from metadata')}
                 </p>
               </div>
 
               {/* Dominant Color Swatch Summary */}
               <div 
                 className="p-3.5 rounded-xl border border-white/5 space-y-2"
-                style={{ backgroundColor: `${audiobook.dominantColor.hex}15` }}
+                style={{ backgroundColor: `${hex}15` }}
               >
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold text-slate-300">Dominant Cover Color:</span>
                   <button
-                    onClick={() => handleCopy(audiobook.dominantColor.hex)}
+                    onClick={() => handleCopy(hex)}
                     className="flex items-center gap-1 text-[11px] font-mono text-indigo-400 hover:text-indigo-300 font-bold cursor-pointer"
                   >
-                    {copiedHex === audiobook.dominantColor.hex ? (
+                    {copiedHex === hex ? (
                       <span className="text-emerald-400 flex items-center gap-0.5">
                         <Check className="w-3 h-3" /> Copied
                       </span>
                     ) : (
                       <>
-                        <span>{audiobook.dominantColor.hex}</span>
+                        <span>{hex}</span>
                         <Copy className="w-3 h-3" />
                       </>
                     )}
@@ -158,12 +149,12 @@ export const AudiobookDetailModal: React.FC<AudiobookDetailModalProps> = ({
                 <div className="flex items-center gap-2">
                   <div 
                     className="w-7 h-7 rounded-lg shadow-md border border-white/20 shrink-0"
-                    style={{ backgroundColor: audiobook.dominantColor.hex }}
+                    style={{ backgroundColor: hex }}
                   />
                   <div className="text-[11px] text-slate-300 min-w-0">
-                    <p className="font-bold truncate">{audiobook.dominantColor.colorName}</p>
+                    <p className="font-bold truncate">{colorName}</p>
                     <p className="text-[10px] font-mono text-slate-400">
-                      RGB({audiobook.dominantColor.rgb.join(', ')})
+                      RGB({rgb.join(', ')})
                     </p>
                   </div>
                 </div>

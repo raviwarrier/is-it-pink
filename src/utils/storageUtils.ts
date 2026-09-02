@@ -18,11 +18,129 @@ export interface SavedMapPackage {
   appName: string;
   exportDate: string;
   nameOrPath: string;
+  serverUrl?: string | null;
+  username?: string | null;
   mode: LibraryMode;
   bookCount: number;
   totalDurationHours: number;
   totalSizeBytes?: number;
   audiobooks: Audiobook[];
+}
+
+export interface SavedMapFileSummary {
+  filename: string;
+  serverUrl?: string | null;
+  username?: string | null;
+  nameOrPath: string;
+  bookCount: number;
+  totalDurationHours: number;
+  mode: LibraryMode;
+  exportDate: string;
+  fileSizeBytes?: number;
+}
+
+/**
+ * Sanitizes server URLs (e.g. https://abs.audiobooks.local:13378) or directory paths
+ * into safe, clean, human-readable filenames: [server-url]-data.json
+ */
+export function sanitizeServerUrlToFilename(urlOrPath: string): string {
+  if (!urlOrPath) return 'audiobook-library';
+  let clean = urlOrPath.trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/[:/\\?#%&*=+\s]+/g, '_')
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+  return clean || 'audiobook-library';
+}
+
+/**
+ * Generates the standard [server-url]-data.ext filename
+ */
+export function getStandardSaveFilename(serverUrlOrPath: string, ext = 'json'): string {
+  const sanitized = sanitizeServerUrlToFilename(serverUrlOrPath);
+  return `${sanitized}-data.${ext.replace(/^\./, '')}`;
+}
+
+/**
+ * Save map package directly to the local server app folder (/data/saved-maps/)
+ */
+export async function saveMapToServer(payload: {
+  nameOrPath: string;
+  serverUrl?: string | null;
+  username?: string | null;
+  mode: LibraryMode;
+  audiobooks: Audiobook[];
+  totalDurationHours?: number;
+  customFilename?: string;
+}): Promise<{ success: boolean; filename?: string; error?: string; packageSummary?: any }> {
+  try {
+    const filename = payload.customFilename || getStandardSaveFilename(payload.serverUrl || payload.nameOrPath || 'audiobook-library');
+    const res = await fetch('/api/save-map', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...payload,
+        customFilename: filename
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Failed to save to app folder');
+    }
+    return { success: true, filename: data.filename, packageSummary: data.packageSummary };
+  } catch (err: any) {
+    console.warn('[Storage] saveMapToServer error:', err);
+    return { success: false, error: err.message || 'Network error saving to server' };
+  }
+}
+
+/**
+ * Fetch list of all saved maps from local app folder
+ */
+export async function fetchSavedMapsListFromServer(): Promise<SavedMapFileSummary[]> {
+  try {
+    const res = await fetch('/api/saved-maps');
+    const data = await res.json();
+    if (res.ok && data.success && Array.isArray(data.files)) {
+      return data.files;
+    }
+  } catch (err) {
+    console.warn('[Storage] fetchSavedMapsListFromServer error:', err);
+  }
+  return [];
+}
+
+/**
+ * Load specific saved map package by filename from local app folder
+ */
+export async function loadSavedMapFromServer(filename: string): Promise<SavedMapPackage | null> {
+  try {
+    const res = await fetch(`/api/saved-maps/${encodeURIComponent(filename)}`);
+    const data = await res.json();
+    if (res.ok && data.success && data.data) {
+      return data.data;
+    }
+  } catch (err) {
+    console.warn('[Storage] loadSavedMapFromServer error:', err);
+  }
+  return null;
+}
+
+/**
+ * Delete a saved map file on the server
+ */
+export async function deleteSavedMapOnServer(filename: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/saved-maps/${encodeURIComponent(filename)}`, {
+      method: 'DELETE'
+    });
+    const data = await res.json();
+    return res.ok && !!data.success;
+  } catch (err) {
+    console.warn('[Storage] deleteSavedMapOnServer error:', err);
+    return false;
+  }
 }
 
 /**

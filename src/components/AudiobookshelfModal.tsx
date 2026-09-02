@@ -26,7 +26,6 @@ import {
   Settings,
   Monitor
 } from 'lucide-react';
-import { DEFAULT_SAMPLE_AUDIOBOOKS } from '../data/sampleAudiobooks';
 
 interface AudiobookshelfModalProps {
   isOpen: boolean;
@@ -102,27 +101,6 @@ export const AudiobookshelfModal: React.FC<AudiobookshelfModalProps> = ({
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Demo Read List generator for instant 1-click preview
-  const handleLoadDemoReadList = () => {
-    // Select 16 finished books from curated library with simulated read completion status
-    const demoReadBooks: Audiobook[] = DEFAULT_SAMPLE_AUDIOBOOKS.slice(0, 16).map((b, idx) => ({
-      ...b,
-      tags: [...b.tags, '#ReadList', '#Finished'],
-      isFinished: true,
-      finishedAt: new Date(Date.now() - (idx * 7 + 3) * 86400000).toISOString()
-    }));
-
-    onConnectSuccess({
-      serverUrl: 'https://demo-abs.audiobookshelf.local',
-      apiToken: 'demo_ephemeral_token_session',
-      username: 'Demo Reader (Sample ABS)',
-      connectedAt: new Date().toISOString(),
-      readCount: demoReadBooks.length
-    }, demoReadBooks);
-
-    onClose();
   };
 
   return (
@@ -322,7 +300,7 @@ export const AudiobookshelfModal: React.FC<AudiobookshelfModalProps> = ({
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full sm:flex-1 py-2.5 px-4 bg-zinc-800 hover:bg-zinc-750 disabled:opacity-50 text-white rounded-full text-xs font-semibold transition-all border border-zinc-700 flex items-center justify-center gap-2 shadow-md cursor-pointer"
+                className="w-full py-2.5 px-4 bg-zinc-800 hover:bg-zinc-750 disabled:opacity-50 text-white rounded-full text-xs font-semibold transition-all border border-zinc-700 flex items-center justify-center gap-2 shadow-md cursor-pointer"
               >
                 {isLoading ? (
                   <>
@@ -335,17 +313,6 @@ export const AudiobookshelfModal: React.FC<AudiobookshelfModalProps> = ({
                     <span>Connect & Load My Read List</span>
                   </>
                 )}
-              </button>
-
-              {/* Demo 1-Click Preview Button */}
-              <button
-                type="button"
-                onClick={handleLoadDemoReadList}
-                className="w-full sm:w-auto py-2.5 px-4 bg-zinc-850 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-750 rounded-full text-xs font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer"
-                title="Instant preview using simulated completed read list"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-200/90" />
-                <span>Try Demo Read List</span>
               </button>
             </div>
 

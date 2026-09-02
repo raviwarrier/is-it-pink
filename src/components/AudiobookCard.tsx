@@ -5,8 +5,9 @@
 
 import React, { useState } from 'react';
 import { Audiobook } from '../types';
-import { formatHours, formatBytes } from '../utils/colorUtils';
-import { Clock, User, HardDrive, Star, Copy, Check, Sparkles, Folder, Play } from 'lucide-react';
+import { formatHours } from '../utils/colorUtils';
+import { BookCoverOrColorBlock } from './BookCoverOrColorBlock';
+import { Check } from 'lucide-react';
 
 interface AudiobookCardProps {
   audiobook: Audiobook;
@@ -32,43 +33,43 @@ export const AudiobookCard: React.FC<AudiobookCardProps> = ({
     setTimeout(() => setCopiedHex(null), 1400);
   };
 
+  const hex = audiobook?.dominantColor?.hex || '#3b82f6';
+  const colorName = audiobook?.dominantColor?.colorName || 'Color Shade';
+  const palette = Array.isArray(audiobook?.palette) && audiobook.palette.length > 0 
+    ? audiobook.palette 
+    : [{ hex, colorName, percentage: 100 }];
+  const genres = Array.isArray(audiobook?.genres) ? audiobook.genres : ['Audiobook'];
+  const tags = Array.isArray(audiobook?.tags) ? audiobook.tags : [];
+  const durationHours = typeof audiobook?.durationHours === 'number' ? audiobook.durationHours : 10;
+  const year = audiobook?.year || 2022;
+
   return (
     <div 
-      id={`audiobook-card-${audiobook.id}`}
+      id={`audiobook-card-${audiobook?.id || Math.random()}`}
       className="bg-[#13161C] border border-zinc-800 hover:border-zinc-700 rounded-2xl p-3.5 shadow-lg hover:shadow-2xl transition-all duration-200 flex flex-col justify-between group hover:-translate-y-0.5"
     >
       <div className="space-y-3">
         
-        {/* Cover Art and Dominant Badge Header */}
-        <div 
-          onClick={onOpenDetail}
-          className="relative w-full aspect-[4/5] rounded-xl overflow-hidden cursor-pointer bg-[#0A0C0F] border border-zinc-800 shadow-md group/cover"
-        >
-          <img
-            src={audiobook.coverUrl}
-            alt={audiobook.title}
-            className="w-full h-full object-cover group-hover/cover:scale-105 transition-transform duration-300"
+        {/* Cover Art Thumbnail OR Solid Block Header */}
+        <div onClick={onOpenDetail} className="relative">
+          <BookCoverOrColorBlock
+            book={audiobook}
+            variant="grid-card"
+            showPlayOverlay={true}
           />
-
-          {/* Quick Play Overlay */}
-          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/cover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-xs">
-            <div className="w-11 h-11 rounded-full bg-zinc-800 text-white border border-zinc-700 flex items-center justify-center shadow-xl transform scale-90 group-hover/cover:scale-100 transition-transform">
-              <Play className="w-5 h-5 fill-current ml-0.5 text-amber-200/90" />
-            </div>
-          </div>
 
           {/* Dominant Color Pill */}
           <div 
-            className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold text-white shadow-md backdrop-blur-md flex items-center gap-1.5 border border-white/20"
-            style={{ backgroundColor: `${audiobook.dominantColor.hex}ee` }}
+            className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold text-white shadow-md backdrop-blur-md flex items-center gap-1.5 border border-white/20 z-10 pointer-events-none"
+            style={{ backgroundColor: `${hex}ee` }}
           >
-            <span className="w-2 h-2 rounded-full bg-white shadow-xs" />
-            <span className="truncate max-w-[110px]">{audiobook.dominantColor.colorName}</span>
+            <span className="w-2 h-2 rounded-full bg-white shadow-xs shrink-0" />
+            <span className="truncate max-w-[110px]">{colorName}</span>
           </div>
 
           {/* Duration Badge */}
-          <div className="absolute bottom-2.5 right-2.5 px-2 py-0.5 rounded-full bg-[#0A0C0F]/90 backdrop-blur-md text-[10px] font-mono text-zinc-300 border border-zinc-800">
-            {formatHours(audiobook.durationHours)}
+          <div className="absolute bottom-2.5 right-2.5 px-2 py-0.5 rounded-full bg-[#0A0C0F]/90 backdrop-blur-md text-[10px] font-mono text-zinc-300 border border-zinc-800 z-10 pointer-events-none">
+            {formatHours(durationHours)}
           </div>
         </div>
 
@@ -76,25 +77,27 @@ export const AudiobookCard: React.FC<AudiobookCardProps> = ({
         <div className="space-y-1">
           <h4 
             onClick={onOpenDetail}
-            className="text-sm font-semibold text-white hover:text-amber-200/90 cursor-pointer line-clamp-1 leading-snug transition-colors"
+            className="text-sm font-semibold text-white hover:text-amber-200/90 cursor-pointer line-clamp-1 leading-snug transition-colors font-sans"
+            title={audiobook?.title}
           >
-            {audiobook.title}
+            {audiobook?.title || 'Untitled Audiobook'}
           </h4>
 
           <div className="flex items-center justify-between text-xs text-zinc-400">
             <button
-              onClick={() => onFilterAuthor?.(audiobook.author)}
+              onClick={() => onFilterAuthor?.(audiobook?.author)}
               className="hover:text-zinc-200 truncate max-w-[160px] text-left transition-colors font-medium cursor-pointer"
+              title={audiobook?.author}
             >
-              {audiobook.author}
+              {audiobook?.author || 'Unknown Author'}
             </button>
             <span className="text-[11px] font-mono text-zinc-500 shrink-0">
-              {audiobook.year}
+              {year}
             </span>
           </div>
         </div>
 
-        {/* Extracted 4-5 Color Palette Swatches Strip */}
+        {/* Extracted Color Palette Swatches Strip */}
         <div className="space-y-1">
           <div className="flex items-center justify-between text-[10px] text-zinc-400 font-semibold">
             <span>Cover Palette:</span>
@@ -105,16 +108,16 @@ export const AudiobookCard: React.FC<AudiobookCardProps> = ({
             )}
           </div>
           <div className="flex h-4 rounded-full overflow-hidden border border-zinc-750 shadow-inner">
-            {audiobook.palette.map((swatch, idx) => (
+            {palette.map((swatch, idx) => (
               <div
                 key={idx}
-                onClick={(e) => handleCopyHex(swatch.hex, e)}
+                onClick={(e) => handleCopyHex(swatch.hex || hex, e)}
                 className="h-full relative group/swatch cursor-pointer hover:scale-y-110 transition-transform"
                 style={{
-                  backgroundColor: swatch.hex,
-                  width: `${swatch.percentage || 25}%`
+                  backgroundColor: swatch.hex || hex,
+                  width: `${swatch.percentage || Math.round(100 / palette.length)}%`
                 }}
-                title={`Click to copy: ${swatch.colorName} (${swatch.hex})`}
+                title={`Click to copy: ${swatch.colorName || colorName} (${swatch.hex || hex})`}
               />
             ))}
           </div>
@@ -122,7 +125,7 @@ export const AudiobookCard: React.FC<AudiobookCardProps> = ({
 
         {/* Genre Badges & Tags */}
         <div className="flex items-center gap-1.5 flex-wrap">
-          {audiobook.genres.slice(0, 2).map((genre) => (
+          {genres.slice(0, 2).map((genre) => (
             <button
               key={genre}
               onClick={() => onFilterGenre?.(genre)}
@@ -131,7 +134,7 @@ export const AudiobookCard: React.FC<AudiobookCardProps> = ({
               {genre}
             </button>
           ))}
-          {audiobook.tags.slice(0, 1).map((tag) => (
+          {tags.slice(0, 1).map((tag) => (
             <button
               key={tag}
               onClick={() => onFilterTag?.(tag)}
@@ -155,3 +158,4 @@ export const AudiobookCard: React.FC<AudiobookCardProps> = ({
     </div>
   );
 };
+

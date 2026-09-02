@@ -14,16 +14,115 @@ import {
 } from './colorUtils';
 
 /**
+ * Defensively normalizes an audiobook object to prevent null/undefined runtime crashes
+ */
+export function normalizeAudiobook(b: any, index: number = 0): Audiobook {
+  if (!b || typeof b !== 'object') {
+    b = {};
+  }
+  const id = String(b.id || `book-${index}-${Date.now()}`);
+  const title = String(b.title || 'Untitled Audiobook');
+  const author = String(b.author || 'Unknown Author');
+  const year = typeof b.year === 'number' && !isNaN(b.year) ? b.year : 2022;
+  const durationHours = typeof b.durationHours === 'number' && !isNaN(b.durationHours) ? Math.max(0.1, b.durationHours) : 10;
+  const fileSizeBytes = typeof b.fileSizeBytes === 'number' && !isNaN(b.fileSizeBytes) ? b.fileSizeBytes : 350 * 1024 * 1024;
+  const coverUrl = typeof b.coverUrl === 'string' ? b.coverUrl : '';
+  const folderPath = b.folderPath || `/media/audiobooks/${title}`;
+  const coverPath = typeof b.coverPath === 'string' ? b.coverPath : (coverUrl || `${folderPath}/cover.jpg`);
+  
+  // Safe dominant color
+  let dominantColor = b.dominantColor;
+  if (!dominantColor || !dominantColor.hex) {
+    const seed = (title + author).split('').reduce((acc: number, c: string) => acc + c.charCodeAt(0), 0);
+    const r = (seed * 37) % 255;
+    const g = (seed * 73) % 255;
+    const bCol = (seed * 113) % 255;
+    const hex = rgbToHex(r, g, bCol);
+    const closest = getClosestNamedColor(hex);
+    dominantColor = {
+      hex,
+      rgb: [r, g, bCol] as [number, number, number],
+      hsl: [0, 50, 50] as [number, number, number],
+      colorName: closest.name,
+      colorFamily: closest.family,
+      luminance: (r * 0.299 + g * 0.587 + bCol * 0.114) / 255
+    };
+  } else {
+    const hex = dominantColor.hex || '#3b82f6';
+    const closest = getClosestNamedColor(hex, dominantColor.colorFamily);
+    dominantColor = {
+      hex,
+      rgb: Array.isArray(dominantColor.rgb) && dominantColor.rgb.length === 3 ? dominantColor.rgb : hexToRgb(hex),
+      hsl: Array.isArray(dominantColor.hsl) && dominantColor.hsl.length === 3 ? dominantColor.hsl : [210, 80, 50],
+      colorName: dominantColor.colorName || closest.name,
+      colorFamily: dominantColor.colorFamily || closest.family,
+      luminance: typeof dominantColor.luminance === 'number' ? dominantColor.luminance : 0.5
+    };
+  }
+
+  // Safe palette
+  let palette = Array.isArray(b.palette) && b.palette.length > 0 ? b.palette : null;
+  if (!palette) {
+    palette = [
+      { hex: dominantColor.hex, colorName: dominantColor.colorName, percentage: 60, rgb: dominantColor.rgb },
+      { hex: '#1E293B', colorName: 'Obsidian Slate', percentage: 25, rgb: [30, 41, 59] },
+      { hex: '#F1F5F9', colorName: 'Parchment White', percentage: 15, rgb: [241, 245, 249] }
+    ];
+  } else {
+    palette = palette.map((p: any) => ({
+      hex: p?.hex || dominantColor.hex,
+      colorName: p?.colorName || 'Shade',
+      percentage: typeof p?.percentage === 'number' ? p.percentage : 25,
+      rgb: Array.isArray(p?.rgb) ? p.rgb : hexToRgb(p?.hex || dominantColor.hex)
+    }));
+  }
+
+  const genres = Array.isArray(b.genres) && b.genres.length > 0 ? b.genres.map(String) : ['Audiobook'];
+  const tags = Array.isArray(b.tags) ? b.tags.map(String) : ['#Audiobook'];
+
+  return {
+    id,
+    title,
+    author,
+    year,
+    durationHours,
+    fileSizeBytes,
+    coverUrl,
+    coverPath,
+    folderPath,
+    hasCoverImage: b.hasCoverImage !== undefined ? Boolean(b.hasCoverImage) : Boolean(coverUrl),
+    dominantColor,
+    palette,
+    genres,
+    tags,
+    description: b.description || `Audiobook recording of ${title} by ${author}.`,
+    narrator: b.narrator || 'Uncredited Narrator',
+    rating: typeof b.rating === 'number' ? b.rating : 4.8,
+    audioFormat: b.audioFormat || 'm4b',
+    bitrateKbps: typeof b.bitrateKbps === 'number' ? b.bitrateKbps : 128,
+    isFavorite: Boolean(b.isFavorite),
+    series: b.series || undefined,
+    seriesNumber: typeof b.seriesNumber === 'number' ? b.seriesNumber : undefined
+  };
+}
+
+export function normalizeAudiobooks(books: Audiobook[] | any[]): Audiobook[] {
+  if (!Array.isArray(books)) return [];
+  return books.map((b, idx) => normalizeAudiobook(b, idx));
+}
+
+/**
  * Level 1: Builds contiguous Treemap with ONE block per color family.
  * Gaps between blocks are removed / minimal (padding: 1).
  */
 export function buildFamilyContiguousTreemap(
-  books: Audiobook[],
+  rawBooks: Audiobook[],
   metric: TreemapMetric,
   width: number,
   height: number,
   padding: number = 1
 ): TreemapNode[] {
+  const books = normalizeAudiobooks(rawBooks);
   if (!books || books.length === 0 || width <= 0 || height <= 0) {
     return [];
   }
@@ -124,12 +223,13 @@ export function buildFamilyContiguousTreemap(
  * Gaps between blocks are minimal (padding: 1).
  */
 export function buildFamilyBreakupTreemap(
-  books: Audiobook[],
+  rawBooks: Audiobook[],
   metric: TreemapMetric,
   width: number,
   height: number,
   padding: number = 1
 ): TreemapNode[] {
+  const books = normalizeAudiobooks(rawBooks);
   if (!books || books.length === 0 || width <= 0 || height <= 0) {
     return [];
   }
@@ -266,13 +366,14 @@ export function buildFamilyBreakupTreemap(
  * Builds a hierarchical Treemap layout for D3 calculation
  */
 export function buildTreemapHierarchy(
-  books: Audiobook[],
+  rawBooks: Audiobook[],
   viewType: TreemapViewType,
   metric: TreemapMetric,
   width: number,
   height: number,
   padding: number = 2
 ): TreemapNode[] {
+  const books = normalizeAudiobooks(rawBooks);
   if (!books || books.length === 0 || width <= 0 || height <= 0) {
     return [];
   }
@@ -538,7 +639,8 @@ export function buildTreemapHierarchy(
 /**
  * Calculates comprehensive statistical metadata for the audiobooks library
  */
-export function calculateLibraryStats(books: Audiobook[]) {
+export function calculateLibraryStats(rawBooks: Audiobook[]) {
+  const books = normalizeAudiobooks(rawBooks);
   const totalBooks = books.length;
   const totalHours = Math.round(books.reduce((sum, b) => sum + b.durationHours, 0) * 10) / 10;
   const totalSizeBytes = books.reduce((sum, b) => sum + b.fileSizeBytes, 0);

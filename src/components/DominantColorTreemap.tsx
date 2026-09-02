@@ -12,7 +12,8 @@ import {
 } from '../types';
 import { 
   buildFamilyContiguousTreemap, 
-  buildFamilyBreakupTreemap 
+  buildFamilyBreakupTreemap,
+  normalizeAudiobooks 
 } from '../utils/treemapUtils';
 import { 
   formatHours, 
@@ -32,6 +33,7 @@ import {
   ZoomIn
 } from 'lucide-react';
 import { BookListGridView } from './BookListGridView';
+import { ErrorBoundary } from './ErrorBoundary';
 
 interface DominantColorTreemapProps {
   audiobooks: Audiobook[];
@@ -165,13 +167,21 @@ export const DominantColorTreemap: React.FC<DominantColorTreemapProps> = ({
 
   // Click Handler for Level 2: Sub-Color Breakup Block -> Go to Level 3
   const handleLevel2BlockClick = (node: TreemapNode) => {
-    const books = node.audiobooks && node.audiobooks.length > 0 ? node.audiobooks : (node.audiobook ? [node.audiobook] : familyBooks);
+    let rawBooks = node.audiobooks && node.audiobooks.length > 0 
+      ? node.audiobooks 
+      : (node.audiobook ? [node.audiobook] : familyBooks);
+    
+    if (!rawBooks || rawBooks.length === 0) {
+      rawBooks = familyBooks.length > 0 ? familyBooks : currentBooks;
+    }
+
+    const safeBooks = normalizeAudiobooks(rawBooks);
     const colorLabel = node.colorName || node.name || 'Sub-Color Selection';
-    const label = `${colorLabel} (${books.length} ${books.length === 1 ? 'Book' : 'Books'})`;
+    const label = `${colorLabel} (${safeBooks.length} ${safeBooks.length === 1 ? 'Book' : 'Books'})`;
 
     setSelectedSubBlock({
       label,
-      books,
+      books: safeBooks,
       colorHex: node.hex || node.color,
       colorFamily: selectedFamily || undefined
     });
@@ -180,7 +190,14 @@ export const DominantColorTreemap: React.FC<DominantColorTreemapProps> = ({
   };
 
   // If in Level 3: Dedicated Grid/List View
-  if (currentLevel === 3 && selectedSubBlock) {
+  if (currentLevel === 3) {
+    const activeSubBlock = selectedSubBlock || {
+      label: selectedFamily ? `${selectedFamily} Audiobooks` : 'All Audiobooks',
+      books: normalizeAudiobooks(familyBooks.length > 0 ? familyBooks : currentBooks),
+      colorFamily: selectedFamily || undefined,
+      colorHex: selectedFamily ? COLOR_FAMILY_PALETTES[selectedFamily]?.bgHex : undefined
+    };
+
     return (
       <div className="space-y-3 animate-fadeIn">
         {/* Breadcrumb Navigation Header */}
@@ -208,11 +225,11 @@ export const DominantColorTreemap: React.FC<DominantColorTreemapProps> = ({
                   style={{ backgroundColor: COLOR_FAMILY_PALETTES[selectedFamily]?.bgHex || '#3b82f6' }} 
                 />
               )}
-              <span>Level 2: {selectedFamily} Breakup</span>
+              <span>Level 2: {selectedFamily || 'Color'} Breakup</span>
             </button>
             <ChevronRight className="w-3.5 h-3.5 text-zinc-600" />
             <span className="text-amber-200/90 font-semibold">
-              Level 3: Book List ({selectedSubBlock.books.length})
+              Level 3: Book List ({activeSubBlock.books.length})
             </span>
           </div>
 
@@ -225,15 +242,17 @@ export const DominantColorTreemap: React.FC<DominantColorTreemapProps> = ({
           </button>
         </div>
 
-        {/* Level 3 Books List Grid View */}
-        <BookListGridView
-          books={selectedSubBlock.books}
-          selectedLabel={selectedSubBlock.label}
-          selectedColorHex={selectedSubBlock.colorHex}
-          selectedColorFamily={selectedSubBlock.colorFamily}
-          onBackToTreemap={() => setCurrentLevel(2)}
-          onOpenBookDetail={onOpenBookDetail}
-        />
+        {/* Level 3 Books List Grid View inside Error Boundary */}
+        <ErrorBoundary fallbackTitle="Audiobook Inspector Recovery" onReset={() => setCurrentLevel(2)}>
+          <BookListGridView
+            books={activeSubBlock.books}
+            selectedLabel={activeSubBlock.label}
+            selectedColorHex={activeSubBlock.colorHex}
+            selectedColorFamily={activeSubBlock.colorFamily}
+            onBackToTreemap={() => setCurrentLevel(2)}
+            onOpenBookDetail={onOpenBookDetail}
+          />
+        </ErrorBoundary>
       </div>
     );
   }

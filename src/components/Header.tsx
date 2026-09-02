@@ -20,7 +20,9 @@ import {
   Library,
   ShieldCheck,
   Settings2,
-  FileJson
+  FileJson,
+  FolderDown,
+  Download
 } from 'lucide-react';
 import { TreemapMetric, LibraryStats, LibraryMode, AudiobookshelfConfig } from '../types';
 import { formatHours } from '../utils/colorUtils';
@@ -42,6 +44,9 @@ interface HeaderProps {
   absConfig: AudiobookshelfConfig | null;
   readCount: number;
   onOpenMapDataModal: () => void;
+  onQuickSave?: () => void;
+  onSmartLoad?: () => void;
+  isSaving?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -60,7 +65,10 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAbsModal,
   absConfig,
   readCount,
-  onOpenMapDataModal
+  onOpenMapDataModal,
+  onQuickSave,
+  onSmartLoad,
+  isSaving
 }) => {
   return (
     <header id="app-header" className="sticky top-0 z-40 bg-[#12151A] border-b border-zinc-800/80 shadow-xl">
@@ -192,17 +200,43 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {/* Save / Load Map JSON Button */}
-            <button
-              id="header-map-data-btn"
-              onClick={onOpenMapDataModal}
-              title="Save map results to JSON, load map file, or manage auto-save cache"
-              className="flex items-center gap-1.5 px-3 py-2 bg-zinc-850 hover:bg-zinc-800 text-zinc-200 border border-zinc-700/80 rounded-lg text-xs font-medium transition-all shadow-sm cursor-pointer"
-            >
-              <FileJson className="w-3.5 h-3.5 text-indigo-400" />
-              <span className="hidden md:inline">Save / Load Map</span>
-              <span className="md:hidden">JSON</span>
-            </button>
+            {/* Quick Save & Load Buttons */}
+            <div className="flex items-center gap-1.5">
+              {onQuickSave && (
+                <button
+                  id="header-quick-save-btn"
+                  onClick={onQuickSave}
+                  disabled={isSaving}
+                  title="Auto-save current library to local app folder as [server-url]-data.json"
+                  className="flex items-center gap-1.5 px-3 py-2 bg-zinc-850 hover:bg-zinc-800 text-zinc-200 border border-zinc-750 hover:border-zinc-700 rounded-lg text-xs font-semibold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  <FolderDown className={`w-3.5 h-3.5 text-amber-200/90 ${isSaving ? 'animate-bounce' : ''}`} />
+                  <span className="hidden sm:inline">{isSaving ? 'Saving...' : 'Save'}</span>
+                </button>
+              )}
+
+              {onSmartLoad && (
+                <button
+                  id="header-smart-load-btn"
+                  onClick={onSmartLoad}
+                  title="Load saved map (auto-loads if only 1 save file exists, or choose from list)"
+                  className="flex items-center gap-1.5 px-3 py-2 bg-zinc-850 hover:bg-zinc-800 text-zinc-200 border border-zinc-750 hover:border-zinc-700 rounded-lg text-xs font-semibold transition-all shadow-xs cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-zinc-300" />
+                  <span className="hidden sm:inline">Load</span>
+                </button>
+              )}
+
+              {/* Save / Load Map JSON Detail Modal Button */}
+              <button
+                id="header-map-data-btn"
+                onClick={onOpenMapDataModal}
+                title="Open Save / Load Maps manager & export tools"
+                className="p-2 bg-zinc-850 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-750 hover:border-zinc-700 rounded-lg text-xs transition-all shadow-xs cursor-pointer"
+              >
+                <FileJson className="w-3.5 h-3.5 text-amber-200/90" />
+              </button>
+            </div>
 
             {/* Quick Metrics Badge */}
             <div className="hidden xl:flex items-center gap-2 pl-2 border-l border-zinc-800 text-xs text-zinc-400">

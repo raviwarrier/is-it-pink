@@ -31,15 +31,13 @@ interface PathScannerModalProps {
   onClose: () => void;
   currentPath: string;
   onScanComplete: (newPath: string, newBooks: Audiobook[]) => void;
-  sampleLibraries: { name: string; path: string; description: string; books: Audiobook[] }[];
 }
 
 export const PathScannerModal: React.FC<PathScannerModalProps> = ({
   isOpen,
   onClose,
   currentPath,
-  onScanComplete,
-  sampleLibraries
+  onScanComplete
 }) => {
   const [inputPath, setInputPath] = useState(currentPath);
   const [isScanning, setIsScanning] = useState(false);
@@ -163,18 +161,13 @@ export const PathScannerModal: React.FC<PathScannerModalProps> = ({
       if (data.items && data.items.length > 0) {
         booksToStream = data.items;
       } else {
-        // Generate library matching volume
-        booksToStream = generateLargeLibrary(4700).map(b => ({
-          ...b,
-          folderPath: `${inputPath.replace(/\/$/, '')}/${b.title} (${b.year})`,
-        }));
+        throw new Error(`No audiobooks found at "${inputPath}". Please check folder permissions or try picking a Local Folder.`);
       }
 
       await runProgressiveScan(booksToStream, inputPath);
     } catch (err: any) {
-      console.warn("Scan fallback:", err);
-      const fallbackBooks = generateLargeLibrary(4700);
-      await runProgressiveScan(fallbackBooks, inputPath);
+      setIsScanning(false);
+      setScanError(err.message || "Failed to scan library directory.");
     }
   };
 
@@ -299,11 +292,6 @@ export const PathScannerModal: React.FC<PathScannerModalProps> = ({
     }
   };
 
-  const handleSimulateMegaLibrary = async () => {
-    const mega = generateLargeLibrary(4700);
-    await runProgressiveScan(mega, "/volume1/Audiobooks/MegaArchive_4700");
-  };
-
   return (
     <div id="path-scanner-modal-backdrop" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
       <div 
@@ -321,7 +309,7 @@ export const PathScannerModal: React.FC<PathScannerModalProps> = ({
                 Audiobook Library Scanner
               </h2>
               <p className="text-xs text-zinc-400">
-                Watch color blocks generate and dynamically expand as each audiobook is ingested
+                Scan your collection to build an interactive chromatic cover palette treemap
               </p>
             </div>
           </div>
@@ -339,7 +327,7 @@ export const PathScannerModal: React.FC<PathScannerModalProps> = ({
         {/* Modal Body */}
         <div className="p-6 space-y-5 overflow-y-auto">
           
-          {/* Live Dynamic Block Growth Treemap Box (Requested: Block creates & grows as scan progresses) */}
+          {/* Live Dynamic Block Growth Treemap Box */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="font-semibold text-zinc-300 flex items-center gap-1.5">
@@ -370,11 +358,11 @@ export const PathScannerModal: React.FC<PathScannerModalProps> = ({
             </div>
 
             {/* SVG Live Growth Canvas */}
-            <div className="w-full h-48 bg-[#090B0E] border border-zinc-800 rounded-xl overflow-hidden relative flex flex-col items-center justify-center">
+            <div className="w-full h-44 bg-[#090B0E] border border-zinc-800 rounded-xl overflow-hidden relative flex flex-col items-center justify-center">
               {streamedBooks.length === 0 ? (
                 <div className="text-center p-4 space-y-1 text-zinc-500">
                   <Gauge className="w-8 h-8 mx-auto text-zinc-600 mb-1" />
-                  <p className="text-xs font-medium text-zinc-400">Ready to scan library folder</p>
+                  <p className="text-xs font-medium text-zinc-400">Ready to scan your library</p>
                   <p className="text-[11px]">Blocks will appear and grow in real-time as colors are classified</p>
                 </div>
               ) : (
@@ -424,11 +412,19 @@ export const PathScannerModal: React.FC<PathScannerModalProps> = ({
             </div>
           </div>
 
-          {/* Method 1: Path Input Box */}
-          <div className="space-y-2">
-            <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400">
-              Enter Audiobook Library Path:
-            </label>
+          {/* Option 1: Scan Server Path */}
+          <div className="p-4 bg-zinc-900/60 border border-zinc-800 rounded-xl space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold text-white">
+                Option 1: Scan Server Path
+              </label>
+              <span className="text-[10px] text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded">
+                Server / NAS / Docker Mount
+              </span>
+            </div>
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
+              <strong>Server Path:</strong> Scans a directory directly on your host machine, container, or network NAS (e.g., <code className="text-zinc-300 font-mono">/media/audiobooks</code> or <code className="text-zinc-300 font-mono">D:\Audiobooks</code>).
+            </p>
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Folder className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -437,7 +433,7 @@ export const PathScannerModal: React.FC<PathScannerModalProps> = ({
                   type="text"
                   value={inputPath}
                   onChange={(e) => setInputPath(e.target.value)}
-                  placeholder="/Users/username/Audiobooks or D:\Audiobooks"
+                  placeholder="/media/audiobooks or D:\Audiobooks"
                   className="w-full bg-zinc-850 font-mono text-xs pl-9 pr-3 py-2.5 rounded-xl border border-zinc-700 focus:outline-none focus:border-amber-200/40 text-zinc-200"
                 />
               </div>
@@ -445,7 +441,7 @@ export const PathScannerModal: React.FC<PathScannerModalProps> = ({
                 id="btn-scan-path"
                 onClick={handleServerPathScan}
                 disabled={isScanning}
-                className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold text-xs rounded-full flex items-center gap-2 transition-all border border-zinc-700 shadow-md disabled:opacity-50 shrink-0 cursor-pointer"
+                className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold text-xs rounded-xl flex items-center gap-2 transition-all border border-zinc-700 shadow-md disabled:opacity-50 shrink-0 cursor-pointer"
               >
                 {isScanning ? (
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -457,16 +453,18 @@ export const PathScannerModal: React.FC<PathScannerModalProps> = ({
             </div>
           </div>
 
-          {/* Quick Actions Bar: Browser Folder & 4,700 Audiobooks Progressive Preset */}
+          {/* Option 2: Browser Local Computer Folder & Load Map File */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Action 1: Select Browser Folder */}
-            <div className="p-3.5 rounded-xl bg-zinc-850 border border-zinc-800 flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <Upload className="w-3.5 h-3.5 text-zinc-400" />
-                  <span className="text-xs font-semibold text-zinc-200">Local Folder</span>
+            <div className="p-3.5 rounded-xl bg-zinc-900/60 border border-zinc-800 flex flex-col justify-between gap-2.5">
+              <div>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Upload className="w-3.5 h-3.5 text-zinc-300" />
+                  <span className="text-xs font-semibold text-white">Option 2: Local Folder</span>
                 </div>
-                <p className="text-[10px] text-zinc-400 truncate">Extract cover colors directly</p>
+                <p className="text-[11px] text-zinc-400 leading-normal">
+                  <strong>Local Folder:</strong> Select an audiobook folder directly from your local computer in your browser. Analyzes cover images in real-time without needing a server path.
+                </p>
               </div>
 
               <input
@@ -484,21 +482,23 @@ export const PathScannerModal: React.FC<PathScannerModalProps> = ({
                 id="btn-pick-browser-folder"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isScanning}
-                className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-xs font-medium rounded-full flex items-center gap-1.5 transition-colors shrink-0 cursor-pointer"
+                className="w-full py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-xs font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
-                <HardDrive className="w-3.5 h-3.5 text-zinc-400" />
-                <span>Browse</span>
+                <HardDrive className="w-3.5 h-3.5 text-zinc-300" />
+                <span>Browse Local Computer</span>
               </button>
             </div>
 
             {/* Action 2: Load Saved Map JSON */}
-            <div className="p-3.5 rounded-xl bg-zinc-850 border border-zinc-800 flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
+            <div className="p-3.5 rounded-xl bg-zinc-900/60 border border-zinc-800 flex flex-col justify-between gap-2.5">
+              <div>
+                <div className="flex items-center gap-1.5 mb-1">
                   <FileJson className="w-3.5 h-3.5 text-indigo-400" />
-                  <span className="text-xs font-semibold text-zinc-200">Load Map File</span>
+                  <span className="text-xs font-semibold text-white">Import Map File</span>
                 </div>
-                <p className="text-[10px] text-zinc-400 truncate">Import saved .json map package</p>
+                <p className="text-[11px] text-zinc-400 leading-normal">
+                  <strong>Map File:</strong> Import an exported <code className="font-mono text-indigo-300 text-[10px]">.json</code> map package created from a previous scan or shared by another user.
+                </p>
               </div>
 
               <input
@@ -512,30 +512,10 @@ export const PathScannerModal: React.FC<PathScannerModalProps> = ({
               <button
                 onClick={() => jsonFileInputRef.current?.click()}
                 disabled={isScanning}
-                className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-xs font-medium rounded-full flex items-center gap-1.5 transition-colors shrink-0 cursor-pointer"
+                className="w-full py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-xs font-medium rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
                 <FileJson className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Import</span>
-              </button>
-            </div>
-
-            {/* Action 3: 4,700 Large Library Progressive Simulation */}
-            <div className="p-3.5 rounded-xl bg-zinc-850 border border-zinc-800 flex items-center justify-between gap-2 sm:col-span-2">
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <Zap className="w-3.5 h-3.5 text-amber-200/90" />
-                  <span className="text-xs font-semibold text-zinc-200">4,700 Audiobooks Progressive Benchmark</span>
-                </div>
-                <p className="text-[10px] text-zinc-400 truncate">Test real-time animated layout streaming with 4,700 books</p>
-              </div>
-
-              <button
-                onClick={handleSimulateMegaLibrary}
-                disabled={isScanning}
-                className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-xs font-medium rounded-full flex items-center gap-1.5 transition-colors shrink-0 cursor-pointer"
-              >
-                <Play className="w-3.5 h-3.5 text-amber-200/90" />
-                <span>Simulate</span>
+                <span>Select .json Map</span>
               </button>
             </div>
           </div>
@@ -547,38 +527,6 @@ export const PathScannerModal: React.FC<PathScannerModalProps> = ({
               <span>{scanError}</span>
             </div>
           )}
-
-          {/* Curated Sample Libraries */}
-          <div className="space-y-2 pt-2 border-t border-zinc-800">
-            <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400">
-              Or Load Curated Chromatic Library Presets:
-            </label>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {sampleLibraries.map((sample, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => {
-                    setInputPath(sample.path);
-                    runProgressiveScan(sample.books, sample.path);
-                  }}
-                  className="p-3 text-left bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 rounded-xl transition-all group space-y-1 cursor-pointer"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-zinc-200 group-hover:text-white">
-                      {sample.name}
-                    </span>
-                    <span className="text-[10px] px-2 py-0.5 bg-zinc-800 text-zinc-300 rounded-full font-mono">
-                      {sample.books.length.toLocaleString()} Books
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-zinc-400 line-clamp-1">
-                    {sample.description}
-                  </p>
-                </button>
-              ))}
-            </div>
-          </div>
 
         </div>
 
@@ -598,7 +546,7 @@ export const PathScannerModal: React.FC<PathScannerModalProps> = ({
             </button>
           ) : (
             <span className="text-zinc-500 text-[11px]">
-              Ready for library path input
+              Choose a scan option to build your color map
             </span>
           )}
 
