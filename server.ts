@@ -2,7 +2,6 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -11,22 +10,6 @@ const app = express();
 const PORT = 4260; //changed this because i have a lot of npm apps trying to run on 3000. need to update reademe.md for this config warning.
 
 app.use(express.json({ limit: "25mb" }));
-
-// Initialize Gemini Client
-const getGeminiClient = () => {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return null;
-  }
-  return new GoogleGenAI({
-    apiKey: apiKey,
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      }
-    }
-  });
-};
 
 // API: Health check
 app.get("/api/health", (req, res) => {
@@ -419,113 +402,25 @@ app.post("/api/scan-library", async (req, res) => {
   }
 });
 
-// API: AI Social Media Post Generation using Gemini 3.7 Flash
+// API: Social Media Post Generation
 app.post("/api/ai/generate-social", async (req, res) => {
   try {
     const { platform, librarySummary, topColors, topGenres, sampleBooks, tone } = req.body;
-    const ai = getGeminiClient();
-
-    if (!ai) {
-      // High-quality fallback if API key is not configured
-      const defaultPost = generateFallbackSocialPost(platform, librarySummary, topColors, topGenres, sampleBooks, tone);
-      return res.json({ post: defaultPost, generatedBy: "algorithmic" });
-    }
-
-    const prompt = `You are a brilliant cultural curator, bibliophile, and aesthetic data storyteller.
-Analyze this audiobook library dataset based on dominant cover colors, genres, publication eras, and authors:
-
-LIBRARY DATA:
-- Total Audiobooks: ${librarySummary?.totalBooks || 28}
-- Total Listening Time: ${librarySummary?.totalHours || 340} hours
-- Dominant Color Breakdown: ${JSON.stringify(topColors || [])}
-- Top Genres: ${JSON.stringify(topGenres || [])}
-- Featured Audiobooks: ${JSON.stringify(sampleBooks || [])}
-- Desired Platform: ${platform || "Twitter / X"}
-- Desired Tone: ${tone || "Witty, observant, aesthetic and insightful"}
-
-Task:
-Generate a ready-to-post, highly engaging social media copy tailored specifically for ${platform}.
-Incorporate:
-1. Fascinating observations about the chromatic psychology of the audiobook covers (e.g. why Sci-Fi covers lean deep midnight indigo and cyberpunk cyan, or historical thrillers favor crimson maroon & terracotta).
-2. Key stats (hours listened, dominant palettes).
-3. 2-3 book mentions from the list.
-4. Strategic, trendy bookish and aesthetic hashtags (e.g. #AudiobookClub #BookTreemap #ColorPalette #AestheticBooks #ReadingGoals).
-5. Catchy formatting with line breaks and appropriate unicode symbols/bullet points.
-
-Return ONLY the final formatted post text.`;
-
-    const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
-      contents: prompt,
-    });
-
-    const text = response.text || "";
-    res.json({ post: text.trim(), generatedBy: "gemini-3.7-flash" });
+    const post = generateFallbackSocialPost(platform, librarySummary, topColors, topGenres, sampleBooks, tone);
+    res.json({ post, generatedBy: "algorithmic" });
   } catch (error: any) {
-    console.error("Gemini Social Gen Error:", error);
-    // Fallback gracefully
-    const fallback = generateFallbackSocialPost(
-      req.body.platform,
-      req.body.librarySummary,
-      req.body.topColors,
-      req.body.topGenres,
-      req.body.sampleBooks,
-      req.body.tone
-    );
-    res.json({ post: fallback, generatedBy: "fallback-after-error", error: error.message });
+    res.status(500).json({ error: error.message || "Failed to generate post" });
   }
 });
 
-// API: AI Analytical Report Generation
+// API: Analytical Report Generation
 app.post("/api/ai/generate-report", async (req, res) => {
   try {
-    const { librarySummary, topColors, topGenres, authorStats, yearDistribution } = req.body;
-    const ai = getGeminiClient();
-
-    if (!ai) {
-      return res.json({
-        report: generateFallbackReport(librarySummary, topColors, topGenres, authorStats),
-        generatedBy: "algorithmic"
-      });
-    }
-
-    const prompt = `You are a visual design researcher and literary archivist.
-Generate an executive aesthetic and chromatic analysis report for an audiobook collection.
-
-DATA:
-- Total Audiobooks: ${librarySummary?.totalBooks}
-- Total Listening Duration: ${librarySummary?.totalHours} hours
-- Top Dominant Cover Colors: ${JSON.stringify(topColors)}
-- Genre Distribution: ${JSON.stringify(topGenres)}
-- Author Distribution: ${JSON.stringify(authorStats)}
-- Era Range: ${JSON.stringify(yearDistribution)}
-
-Generate a structured, professional, yet fascinating Report with these sections:
-1. Executive Summary & Chromatic Identity
-2. Color Psychology & Genre Correlation (deep dive into why certain genres demand specific dominant hues)
-3. Era Shifts & Visual Trends (how cover art design has evolved across publication years)
-4. Curatorial Insights & Recommended Listening Paths
-5. Library Chromatic Fingerprint Summary
-
-Write in a sophisticated, clear tone with clean Markdown formatting (H2s, H3s, bullet points, callout takeaways).`;
-
-    const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
-      contents: prompt,
-    });
-
-    res.json({ report: (response.text || "").trim(), generatedBy: "gemini-3.7-flash" });
+    const { librarySummary, topColors, topGenres, authorStats } = req.body;
+    const report = generateFallbackReport(librarySummary, topColors, topGenres, authorStats);
+    res.json({ report, generatedBy: "algorithmic" });
   } catch (error: any) {
-    console.error("Gemini Report Gen Error:", error);
-    res.json({
-      report: generateFallbackReport(
-        req.body.librarySummary,
-        req.body.topColors,
-        req.body.topGenres,
-        req.body.authorStats
-      ),
-      generatedBy: "fallback-after-error"
-    });
+    res.status(500).json({ error: error.message || "Failed to generate report" });
   }
 });
 

@@ -12,7 +12,6 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     volumes:
       # Optional: Mount your host audiobook folder to scan locally
       - /path/to/your/audiobooks:/media/audiobooks:ro

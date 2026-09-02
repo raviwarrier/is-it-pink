@@ -19,7 +19,12 @@ import {
   Loader2, 
   Trash2,
   ExternalLink,
-  Info
+  Info,
+  HelpCircle,
+  Copy,
+  Check,
+  Settings,
+  Monitor
 } from 'lucide-react';
 import { DEFAULT_SAMPLE_AUDIOBOOKS } from '../data/sampleAudiobooks';
 
@@ -42,8 +47,16 @@ export const AudiobookshelfModal: React.FC<AudiobookshelfModalProps> = ({
   const [apiToken, setApiToken] = useState(config?.apiToken || '');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showApiKeyGuide, setShowApiKeyGuide] = useState(false);
+  const [copiedExpiry, setCopiedExpiry] = useState(false);
 
   if (!isOpen) return null;
+
+  const handleCopyExpiry = () => {
+    navigator.clipboard.writeText('21600');
+    setCopiedExpiry(true);
+    setTimeout(() => setCopiedExpiry(false), 2000);
+  };
 
   const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -213,15 +226,79 @@ export const AudiobookshelfModal: React.FC<AudiobookshelfModalProps> = ({
 
             {/* API Token Input */}
             <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-zinc-300 flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5">
                   <KeyRound className="w-3.5 h-3.5 text-amber-200/90" />
                   <span>Audiobookshelf API Token / Key</span>
-                </span>
-                <span className="text-[10px] text-zinc-500 font-normal">
-                  In ABS: Settings → Users → Select User → API Tokens
-                </span>
-              </label>
+                </label>
+                
+                {/* Tooltip Button: "How to get one?" */}
+                <button
+                  type="button"
+                  onClick={() => setShowApiKeyGuide(prev => !prev)}
+                  className="flex items-center gap-1 text-[11px] font-medium text-amber-300/90 hover:text-amber-200 underline underline-offset-2 transition-colors cursor-pointer"
+                  title="Click to view step-by-step guide on generating an Audiobookshelf API key"
+                >
+                  <HelpCircle className="w-3.5 h-3.5 text-amber-300" />
+                  <span>How to get one?</span>
+                </button>
+              </div>
+
+              {/* Step-by-Step API Key Tooltip / Guide Drawer */}
+              {showApiKeyGuide && (
+                <div className="p-3.5 bg-zinc-900/95 border border-amber-500/30 rounded-xl text-xs space-y-2.5 animate-fadeIn shadow-lg text-zinc-300">
+                  <div className="flex items-center justify-between pb-1.5 border-b border-zinc-800">
+                    <div className="flex items-center gap-1.5 font-bold text-amber-200 text-xs">
+                      <KeyRound className="w-3.5 h-3.5 text-amber-300" />
+                      <span>How to generate an Audiobookshelf API Key:</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKeyGuide(false)}
+                      className="text-zinc-400 hover:text-white text-[11px] px-1.5 py-0.5 rounded hover:bg-zinc-800 transition-colors"
+                    >
+                      ✕ Close
+                    </button>
+                  </div>
+
+                  <ol className="space-y-2 text-[11px] leading-relaxed pl-1 text-zinc-300">
+                    <li className="flex items-start gap-2">
+                      <span className="w-4 h-4 rounded-full bg-zinc-800 text-amber-300 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5 border border-zinc-700">1</span>
+                      <span>Log into your <strong>Audiobookshelf server</strong> from a <strong>desktop browser</strong> (not mobile).</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="w-4 h-4 rounded-full bg-zinc-800 text-amber-300 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5 border border-zinc-700">2</span>
+                      <span>Click on <strong>Settings</strong> (the gear icon <Settings className="w-3 h-3 inline-block text-zinc-400" /> in the navigation).</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="w-4 h-4 rounded-full bg-zinc-800 text-amber-300 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5 border border-zinc-700">3</span>
+                      <span>Click on <strong>API Keys</strong> from the left panel.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="w-4 h-4 rounded-full bg-zinc-800 text-amber-300 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5 border border-zinc-700">4</span>
+                      <span>Click <strong>&quot;Add API Key&quot;</strong>.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="w-4 h-4 rounded-full bg-zinc-800 text-amber-300 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5 border border-zinc-700">5</span>
+                      <div>
+                        <span>Give it a name and put <strong className="text-amber-200 font-mono bg-zinc-800 px-1 py-0.5 rounded border border-zinc-700">21600</strong> in the <strong>&quot;Expires in&quot;</strong> field.</span>
+                        <button
+                          type="button"
+                          onClick={handleCopyExpiry}
+                          className="ml-2 inline-flex items-center gap-1 text-[10px] text-amber-300 hover:text-amber-100 bg-amber-950/50 hover:bg-amber-900/60 border border-amber-700/50 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+                        >
+                          {copiedExpiry ? <Check className="w-2.5 h-2.5 text-emerald-400" /> : <Copy className="w-2.5 h-2.5" />}
+                          <span>{copiedExpiry ? 'Copied 21600!' : 'Copy 21600'}</span>
+                        </button>
+                        <p className="text-[10px] text-zinc-400 mt-0.5">
+                          That will automatically kill and expire the API key in 6 hours for maximum safety.
+                        </p>
+                      </div>
+                    </li>
+                  </ol>
+                </div>
+              )}
+
               <input
                 type="password"
                 value={apiToken}

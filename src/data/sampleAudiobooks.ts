@@ -751,6 +751,60 @@ export const SAMPLE_AUDIOBOOKS_DATA: Audiobook[] = [
     audioFormat: "m4b",
     bitrateKbps: 64,
     isFavorite: true
+  },
+  {
+    id: "ab-025",
+    title: "The Snow Child",
+    author: "Eowyn Ivey",
+    year: 2012,
+    genres: ["Literary Fiction", "Magical Realism", "Historical Fiction"],
+    tags: ["#Alaska1920", "#Wilderness", "#SnowGirl", "#PulitzerFinalist", "#Folklore"],
+    durationHours: 11.8,
+    durationMinutes: 708,
+    fileSizeBytes: 350 * 1024 * 1024,
+    folderPath: "/Audiobooks/Eowyn Ivey - The Snow Child (2012)",
+    coverPath: "/Audiobooks/Eowyn Ivey - The Snow Child (2012)/cover.jpg",
+    coverUrl: createCoverSvg("The Snow Child", "Eowyn Ivey", "#F8FAFC", "#E2E8F0", "mountain", "ALASKAN WILDERNESS TALE"),
+    hasCoverImage: true,
+    dominantColor: classifyColor(248, 250, 252), // Pristine Snow White #F8FAFC
+    palette: [
+      { hex: "#F8FAFC", colorName: "Pristine Snow White", percentage: 56, rgb: [248, 250, 252] },
+      { hex: "#E2E8F0", colorName: "Alaskan Ice Mist", percentage: 24, rgb: [226, 232, 240] },
+      { hex: "#94A3B8", colorName: "Glacial Frost Gray", percentage: 12, rgb: [148, 163, 184] },
+      { hex: "#0284C7", colorName: "Arctic Sky Cyan", percentage: 8, rgb: [2, 132, 199] },
+    ],
+    description: "Alaska, 1920: a brutal place to homestead. Jack and Mabel are struggling, childless and drifting apart, until a moment of levity leads them to build a child out of snow.",
+    narrator: "Debra Monk",
+    rating: 4.82,
+    audioFormat: "m4b",
+    bitrateKbps: 64
+  },
+  {
+    id: "ab-026",
+    title: "White Nights",
+    author: "Fyodor Dostoevsky",
+    year: 1848,
+    genres: ["Classic", "Literary Fiction", "Romance"],
+    tags: ["#SaintPetersburg", "#SolitaryDreamer", "#RussianClassic", "#Nocturnal"],
+    durationHours: 3.2,
+    durationMinutes: 192,
+    fileSizeBytes: 95 * 1024 * 1024,
+    folderPath: "/Audiobooks/Fyodor Dostoevsky - White Nights (1848)",
+    coverPath: "/Audiobooks/Fyodor Dostoevsky - White Nights (1848)/cover.jpg",
+    coverUrl: createCoverSvg("White Nights", "Fyodor Dostoevsky", "#F1F5F9", "#CBD5E1", "sparkles", "A SENTIMENTAL STORY"),
+    hasCoverImage: true,
+    dominantColor: classifyColor(241, 245, 249), // White Alabaster #F1F5F9
+    palette: [
+      { hex: "#F1F5F9", colorName: "Midnight Twilight White", percentage: 54, rgb: [241, 245, 249] },
+      { hex: "#CBD5E1", colorName: "Neva River Mist", percentage: 26, rgb: [203, 213, 225] },
+      { hex: "#475569", colorName: "Petersburg Bridge Slate", percentage: 12, rgb: [71, 85, 105] },
+      { hex: "#D97706", colorName: "Gaslamp Gold", percentage: 8, rgb: [217, 119, 6] },
+    ],
+    description: "A young, solitary dreamer wanders the streets of St. Petersburg during the eerie, sunlit 'white nights' of summer and encounters a weeping woman on a bridge.",
+    narrator: "Simon Vance",
+    rating: 4.79,
+    audioFormat: "mp3",
+    bitrateKbps: 128
   }
 ];
 

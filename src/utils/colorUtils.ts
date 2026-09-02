@@ -57,92 +57,197 @@ export function getContrastTextColor(hexColor: string): string {
   return lum > 0.38 ? '#0f172a' : '#f8fafc'; // Crisp dark slate vs clean light off-white
 }
 
+/**
+ * Converts RGB to CIELAB color space (via XYZ standard illuminant D65)
+ */
+export function rgbToLab(r: number, g: number, b: number): [number, number, number] {
+  // Convert sRGB to linear RGB
+  let [rL, gL, bL] = [r / 255, g / 255, b / 255].map(v => 
+    v > 0.04045 ? Math.pow((v + 0.055) / 1.055, 2.4) : v / 12.92
+  );
+  rL *= 100;
+  gL *= 100;
+  bL *= 100;
+
+  // D65 Standard Illuminant reference XYZ
+  const x = rL * 0.4124564 + gL * 0.3575761 + bL * 0.1804375;
+  const y = rL * 0.2126729 + gL * 0.7151522 + bL * 0.0721750;
+  const z = rL * 0.0193339 + gL * 0.1191920 + bL * 0.9503041;
+
+  const refX = 95.047;
+  const refY = 100.000;
+  const refZ = 108.883;
+
+  const [xR, yR, zR] = [x / refX, y / refY, z / refZ].map(v => 
+    v > 0.008856 ? Math.cbrt(v) : (7.787 * v) + (16 / 116)
+  );
+
+  const L = (116 * yR) - 16;
+  const a = 500 * (xR - yR);
+  const b_lab = 200 * (yR - zR);
+
+  return [L, a, b_lab];
+}
+
+export function hexToLab(hex: string): [number, number, number] {
+  const [r, g, b] = hexToRgb(hex);
+  return rgbToLab(r, g, b);
+}
+
+/**
+ * Calculates CIE76 perceptual color difference (Delta E) between two hex colors.
+ * Values < 10-14 are perceived as the same general shade; > 14 are distinct shades.
+ */
+export function calculateColorDistance(hex1: string, hex2: string): number {
+  if (hex1.toUpperCase() === hex2.toUpperCase()) return 0;
+  const [L1, a1, b1] = hexToLab(hex1);
+  const [L2, a2, b2] = hexToLab(hex2);
+  const dL = L1 - L2;
+  const da = a1 - a2;
+  const db = b1 - b2;
+  return Math.sqrt(dL * dL + da * da + db * db);
+}
+
+/**
+ * Detailed shade naming for fine-grained color classification
+ */
+export function getGranularShadeName(h: number, s: number, l: number): string {
+  // Achromatics
+  if (l >= 90) return 'Parchment White';
+  if (l >= 78 && s < 40) return 'Alabaster Ivory';
+  if (s < 18 && l > 50) return 'Light Mist Gray';
+  if (l <= 14) return 'Obsidian Black';
+  if (l <= 25 && s < 30) return 'Charcoal Black';
+  if (s < 25 && l <= 50) return 'Dark Slate Gray';
+
+  // Earthy Browns in low-lightness warm hues
+  if (h >= 15 && h < 45 && l < 40 && s < 70) {
+    if (l < 22) return 'Deep Espresso Brown';
+    if (l < 32) return 'Warm Saddle Brown';
+    return 'Umber Clay Brown';
+  }
+
+  // Red Spectrum
+  if (h >= 348 || h < 15) {
+    if (l < 22) return 'Deep Maroon';
+    if (l < 35 && s >= 60) return 'Deep Crimson';
+    if (l < 35 && s < 60) return 'Burgundy Wine';
+    if (l > 65) return 'Coral Rose';
+    if (s < 55) return 'Terracotta Rust';
+    return 'Ruby Vermilion';
+  }
+
+  // Orange Spectrum
+  if (h >= 15 && h < 45) {
+    if (l < 38) return 'Terracotta Sienna';
+    if (l > 65) return 'Apricot Sunset';
+    if (h >= 32) return 'Warm Amber';
+    return 'Burnt Tangerine';
+  }
+
+  // Yellow Spectrum
+  if (h >= 45 && h < 70) {
+    if (l < 35) return 'Antique Ochre';
+    if (l > 68) return 'Canary Lemon';
+    if (h < 55) return 'Marigold Gold';
+    return 'Saffron Gold';
+  }
+
+  // Green Spectrum
+  if (h >= 70 && h < 165) {
+    if (l < 24) return 'Dark Forest Pine';
+    if (l < 38 && s >= 50) return 'Forest Emerald';
+    if (l < 38 && s < 50) return 'Deep Olive';
+    if (l > 65) return 'Sage Celadon';
+    if (h < 105) return 'Chartreuse Lime';
+    if (h >= 140) return 'Seafoam Mint';
+    return 'Viridian Moss';
+  }
+
+  // Blue Spectrum (Fine-grained to distinguish Cyan, Sky, Cerulean, Cobalt, Royal, Navy)
+  if (h >= 165 && h < 225) {
+    if (l < 20) return 'Midnight Navy';
+    if (h < 185) {
+      if (l > 60) return 'Glacial Cyan';
+      if (l < 35) return 'Dark Teal Abyss';
+      return 'Cyberpunk Cyan';
+    }
+    if (h >= 185 && h < 205) {
+      if (l > 55) return 'Sky Cerulean';
+      if (l < 32) return 'Deep Ocean Blue';
+      return 'Cerulean Blue';
+    }
+    // h >= 205 to 225
+    if (l > 60) return 'Periwinkle Blue';
+    if (l < 32) return 'Deep Highstorm Cobalt';
+    if (s > 70) return 'Cobalt Royal Blue';
+    return 'Steel Sapphire Blue';
+  }
+
+  // Indigo Spectrum
+  if (h >= 225 && h < 260) {
+    if (l < 22) return 'Deep Night Indigo';
+    if (l > 60) return 'Lavender Indigo';
+    if (s < 50) return 'Twilight Slate Indigo';
+    return 'Electric Indigo';
+  }
+
+  // Violet Spectrum
+  if (h >= 260 && h < 295) {
+    if (l < 24) return 'Deep Astral Violet';
+    if (l > 65) return 'Lavender Mist';
+    if (s < 50) return 'Muted Heather Violet';
+    return 'Royal Amethyst';
+  }
+
+  // Pink Spectrum
+  if (l < 28) return 'Deep Plum';
+  if (l < 46) return 'Mulberry Wine';
+  if (l > 70) return 'Blush Rose';
+  if (s > 70) return 'Vibrant Magenta';
+  return 'Coral Pink';
+}
+
 export function classifyColor(r: number, g: number, b: number): DominantColorInfo {
   const hex = rgbToHex(r, g, b);
   const [h, s, l] = rgbToHsl(r, g, b);
   const lum = getLuminance(r, g, b);
 
   let colorFamily = 'Black';
-  let colorName = 'Obsidian Black';
+  let colorName = getGranularShadeName(h, s, l);
 
   // Neutrals / Achromatic & Extreme Luminance Bounds:
-  // - Pure whites, creams, ivories, and pale pastels (l >= 84, or l >= 72 with s < 55)
-  // - Light grays and silvers (s < 28 with l > 50)
-  // - Pure blacks and deep dark shades (l <= 14, or l <= 22 with s < 55)
-  // - Dark grays and charcoals (s < 28 with l <= 50)
   const isWhiteOrLightGray = (l >= 84) || (l >= 72 && s < 55) || (s < 28 && l > 50);
   const isBlackOrDarkGray = (l <= 14) || (l <= 22 && s < 55) || (s < 28 && l <= 50);
 
   if (isWhiteOrLightGray) {
     colorFamily = 'White';
-    if (l >= 90) {
-      colorName = 'Parchment White';
-    } else if (l >= 78) {
-      colorName = 'Alabaster Ivory';
-    } else {
-      colorName = 'Light Mist Gray';
-    }
   } else if (isBlackOrDarkGray) {
     colorFamily = 'Black';
-    if (l < 15) {
-      colorName = 'Obsidian Black';
-    } else if (l < 30) {
-      colorName = 'Charcoal Black';
-    } else {
-      colorName = 'Dark Slate Gray';
-    }
   } else {
     // Chromatics:
-    // Earthy Browns / Warm Ochres into ORANGE set
     if ((h >= 15 && h < 45 && l < 42 && s < 75) || (h >= 15 && h < 40 && l < 32)) {
-      colorFamily = 'Orange'; // Browns in Orange set!
-      colorName = l < 22 ? 'Deep Espresso Brown' : l < 34 ? 'Warm Saddle Brown' : 'Umber Clay Brown';
-    }
-    // Red (R in VIBGYOR)
-    else if (h >= 348 || h < 15) {
+      colorFamily = 'Orange'; // Browns in Orange set
+    } else if (h >= 348 || h < 15) {
       colorFamily = 'Red';
-      colorName = l < 35 ? 'Deep Crimson' : l > 65 ? 'Coral Rose' : 'Ruby Vermilion';
-    }
-    // Orange (O in VIBGYOR & Terracotta)
-    else if (h >= 15 && h < 45) {
+    } else if (h >= 15 && h < 45) {
       colorFamily = 'Orange';
-      colorName = l < 40 ? 'Terracotta Sienna' : l > 65 ? 'Apricot Sunset' : 'Burnt Amber';
-    }
-    // Yellow (Y in VIBGYOR)
-    else if (h >= 45 && h < 70) {
+    } else if (h >= 45 && h < 70) {
       if (l < 32 && s < 60) {
-        // Dark desaturated ochre -> Orange & Brown set
         colorFamily = 'Orange';
-        colorName = 'Ochre Wood Brown';
       } else {
         colorFamily = 'Yellow';
-        colorName = l < 40 ? 'Antique Ochre' : 'Saffron Gold';
       }
-    }
-    // Green (G in VIBGYOR)
-    else if (h >= 70 && h < 165) {
+    } else if (h >= 70 && h < 165) {
       colorFamily = 'Green';
-      colorName = l < 35 ? 'Forest Emerald' : l > 65 ? 'Sage Celadon' : 'Viridian Moss';
-    }
-    // Blue (B in VIBGYOR)
-    else if (h >= 165 && h < 225) {
+    } else if (h >= 165 && h < 225) {
       colorFamily = 'Blue';
-      colorName = l < 30 ? 'Midnight Navy' : l > 65 ? 'Glacial Ice' : 'Cobalt Royal Blue';
-    }
-    // Indigo (I in VIBGYOR)
-    else if (h >= 225 && h < 260) {
+    } else if (h >= 225 && h < 260) {
       colorFamily = 'Indigo';
-      colorName = l < 30 ? 'Deep Night Indigo' : 'Electric Indigo';
-    }
-    // Violet (V in VIBGYOR)
-    else if (h >= 260 && h < 295) {
+    } else if (h >= 260 && h < 295) {
       colorFamily = 'Violet';
-      colorName = l < 35 ? 'Deep Astral Violet' : l > 65 ? 'Lavender Mist' : 'Royal Amethyst';
-    }
-    // Pinks / Magentas
-    else {
+    } else {
       colorFamily = 'Pink';
-      colorName = l < 40 ? 'Mulberry Wine' : l > 70 ? 'Blush Rose' : 'Vibrant Pink';
     }
   }
 

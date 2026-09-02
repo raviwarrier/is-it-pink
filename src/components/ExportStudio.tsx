@@ -184,7 +184,7 @@ export const ExportStudio: React.FC<ExportStudioProps> = ({
     ctx.fillText(`Mapped via Is it Pink? • What color is your audiobook shelf? • ${libraryPath.slice(0, 35)}`, 60, footerY);
   };
 
-  // Generate Social Post via API / Gemini
+  // Generate Social Post
   const handleGenerateSocialPost = async () => {
     setIsGeneratingPost(true);
     try {
@@ -209,7 +209,7 @@ export const ExportStudio: React.FC<ExportStudioProps> = ({
     }
   };
 
-  // Generate Analytical Report via API / Gemini
+  // Generate Analytical Report
   const handleGenerateAIReport = async () => {
     setIsGeneratingReport(true);
     try {
@@ -344,7 +344,7 @@ export const ExportStudio: React.FC<ExportStudioProps> = ({
                   <span>Platform & Post Configuration</span>
                 </h3>
                 <span className="text-[11px] text-slate-400 font-mono">
-                  Gemini 3.7 Flash AI
+                  Automated Generator
                 </span>
               </div>
 
@@ -540,7 +540,7 @@ export const ExportStudio: React.FC<ExportStudioProps> = ({
                 className="flex items-center gap-1.5 px-4 py-2 bg-[#1F232B] hover:bg-white/10 text-slate-200 text-xs font-medium rounded-full border border-white/10 transition-colors"
               >
                 <Sparkles className={`w-3.5 h-3.5 text-indigo-400 ${isGeneratingReport ? 'animate-spin' : ''}`} />
-                <span>Enrich with AI Insights</span>
+                <span>Generate Curatorial Insights</span>
               </button>
             </div>
           </div>

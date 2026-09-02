@@ -5,7 +5,295 @@
 
 import { hierarchy, treemap, treemapSquarify } from 'd3-hierarchy';
 import { Audiobook, TreemapMetric, TreemapNode, TreemapViewType } from '../types';
-import { getContrastTextColor, COLOR_FAMILY_PALETTES } from './colorUtils';
+import { 
+  getContrastTextColor, 
+  COLOR_FAMILY_PALETTES, 
+  calculateColorDistance, 
+  hexToRgb, 
+  rgbToHex,
+  getGranularShadeName 
+} from './colorUtils';
+
+/**
+ * Level 1: Builds contiguous Treemap with ONE block per color family.
+ * Gaps between blocks are removed / minimal (padding: 1).
+ */
+export function buildFamilyContiguousTreemap(
+  books: Audiobook[],
+  metric: TreemapMetric,
+  width: number,
+  height: number,
+  padding: number = 1
+): TreemapNode[] {
+  if (!books || books.length === 0 || width <= 0 || height <= 0) {
+    return [];
+  }
+
+  const getValue = (book: Audiobook): number => {
+    if (metric === 'duration') return Math.max(0.1, book.durationHours);
+    if (metric === 'fileSize') return Math.max(10, Math.round(book.fileSizeBytes / (1024 * 1024)));
+    return 1; // 'count'
+  };
+
+  const familyMap: Record<string, { family: string; books: Audiobook[]; totalVal: number; totalHours: number; totalBytes: number }> = {};
+  let overallTotalVal = 0;
+
+  books.forEach(b => {
+    const fam = b.dominantColor.colorFamily || (b.dominantColor.luminance > 0.5 ? 'White' : 'Black');
+    if (!familyMap[fam]) {
+      familyMap[fam] = { family: fam, books: [], totalVal: 0, totalHours: 0, totalBytes: 0 };
+    }
+    const val = getValue(b);
+    familyMap[fam].books.push(b);
+    familyMap[fam].totalVal += val;
+    familyMap[fam].totalHours += b.durationHours;
+    familyMap[fam].totalBytes += b.fileSizeBytes;
+    overallTotalVal += val;
+  });
+
+  const sortedFamilies = Object.entries(familyMap).sort(([famA], [famB]) => {
+    const orderA = COLOR_FAMILY_PALETTES[famA]?.order ?? 99;
+    const orderB = COLOR_FAMILY_PALETTES[famB]?.order ?? 99;
+    return orderA - orderB;
+  });
+
+  const rootData = {
+    name: 'Root',
+    children: sortedFamilies.map(([fam, grp]) => {
+      const pal = COLOR_FAMILY_PALETTES[fam] || { bgHex: grp.books[0]?.dominantColor.hex || '#334155', textHex: '#ffffff' };
+      const pct = overallTotalVal > 0 ? (grp.totalVal / overallTotalVal) * 100 : 0;
+      return {
+        id: `family-node-${fam}`,
+        name: fam,
+        colorFamily: fam,
+        color: pal.bgHex,
+        hex: pal.bgHex,
+        textColor: getContrastTextColor(pal.bgHex),
+        value: Math.max(0.01, grp.totalVal),
+        count: grp.books.length,
+        durationHours: grp.totalHours,
+        fileSizeBytes: grp.totalBytes,
+        audiobooks: grp.books,
+        percentage: Number(pct.toFixed(1))
+      };
+    })
+  };
+
+  const root = hierarchy(rootData)
+    .sum(d => (d as any).value || 0)
+    .sort((a, b) => ((b as any).value || 0) - ((a as any).value || 0));
+
+  const treemapLayout = treemap<any>()
+    .size([width, height])
+    .paddingOuter(0)
+    .paddingInner(padding)
+    .round(true)
+    .tile(treemapSquarify.ratio(1.3));
+
+  treemapLayout(root);
+
+  const nodes: TreemapNode[] = [];
+  root.leaves().forEach((leaf: any) => {
+    const d = leaf.data;
+    nodes.push({
+      id: d.id,
+      name: d.name,
+      value: leaf.value,
+      count: d.count,
+      durationHours: d.durationHours,
+      fileSizeBytes: d.fileSizeBytes,
+      percentage: d.percentage,
+      color: d.color,
+      hex: d.hex,
+      colorFamily: d.colorFamily,
+      textColor: d.textColor,
+      audiobooks: d.audiobooks,
+      x0: leaf.x0,
+      y0: leaf.y0,
+      x1: leaf.x1,
+      y1: leaf.y1,
+    });
+  });
+
+  return nodes;
+}
+
+/**
+ * Level 2: Builds breakup Treemap for sub-colors of a specific color family.
+ * Books sharing the same main color / sub-color within a perceptual tolerance range (Delta-E <= 14)
+ * are clubbed under the same sub-color block.
+ * Gaps between blocks are minimal (padding: 1).
+ */
+export function buildFamilyBreakupTreemap(
+  books: Audiobook[],
+  metric: TreemapMetric,
+  width: number,
+  height: number,
+  padding: number = 1,
+  colorToleranceDeltaE: number = 14.0
+): TreemapNode[] {
+  if (!books || books.length === 0 || width <= 0 || height <= 0) {
+    return [];
+  }
+
+  const getValue = (book: Audiobook): number => {
+    if (metric === 'duration') return Math.max(0.1, book.durationHours);
+    if (metric === 'fileSize') return Math.max(10, Math.round(book.fileSizeBytes / (1024 * 1024)));
+    return 1; // 'count'
+  };
+
+  const totalMetricVal = books.reduce((sum, b) => sum + getValue(b), 0);
+
+  // Sort books by HSL (Hue, then Lightness, then Saturation) for coherent cluster grouping
+  const sortedBooks = [...books].sort((a, b) => {
+    const hslA = a.dominantColor.hsl;
+    const hslB = b.dominantColor.hsl;
+    if (hslA[0] !== hslB[0]) return hslA[0] - hslB[0];
+    if (hslA[2] !== hslB[2]) return hslA[2] - hslB[2];
+    return hslA[1] - hslB[1];
+  });
+
+  interface SubColorCluster {
+    id: string;
+    colorName: string;
+    colorFamily: string;
+    representativeHex: string;
+    allHexes: string[];
+    books: Audiobook[];
+    totalVal: number;
+    totalHours: number;
+    totalBytes: number;
+  }
+
+  const clusters: SubColorCluster[] = [];
+
+  // Group books by perceptual color tolerance
+  sortedBooks.forEach(book => {
+    const bookHex = book.dominantColor.hex;
+    const val = getValue(book);
+
+    // Find the closest existing cluster within tolerance range
+    let bestCluster: SubColorCluster | null = null;
+    let minDistance = Infinity;
+
+    for (const cluster of clusters) {
+      const dist = calculateColorDistance(bookHex, cluster.representativeHex);
+      if (dist <= colorToleranceDeltaE && dist < minDistance) {
+        minDistance = dist;
+        bestCluster = cluster;
+      }
+    }
+
+    if (bestCluster) {
+      bestCluster.books.push(book);
+      bestCluster.allHexes.push(bookHex);
+      bestCluster.totalVal += val;
+      bestCluster.totalHours += book.durationHours;
+      bestCluster.totalBytes += book.fileSizeBytes;
+    } else {
+      // Form a new sub-color cluster
+      const [h, s, l] = book.dominantColor.hsl;
+      const colorName = book.dominantColor.colorName || getGranularShadeName(h, s, l);
+      const fam = book.dominantColor.colorFamily || (book.dominantColor.luminance > 0.5 ? 'White' : 'Black');
+
+      clusters.push({
+        id: `subcolor-${colorName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}-${clusters.length + 1}`,
+        colorName,
+        colorFamily: fam,
+        representativeHex: bookHex,
+        allHexes: [bookHex],
+        books: [book],
+        totalVal: val,
+        totalHours: book.durationHours,
+        totalBytes: book.fileSizeBytes
+      });
+    }
+  });
+
+  // Sort sub-colors descending by total metric value
+  const sortedClusters = clusters.sort((a, b) => b.totalVal - a.totalVal);
+
+  const rootData = {
+    name: 'FamilyRoot',
+    children: sortedClusters.map((cluster) => {
+      const pct = totalMetricVal > 0 ? (cluster.totalVal / totalMetricVal) * 100 : 0;
+
+      // Calculate representative cluster hex
+      let clusterHex = cluster.representativeHex;
+      if (cluster.books.length > 1) {
+        const sumRgb = cluster.books.reduce(
+          (acc, b) => {
+            const [r, g, bl] = hexToRgb(b.dominantColor.hex);
+            return [acc[0] + r, acc[1] + g, acc[2] + bl];
+          },
+          [0, 0, 0]
+        );
+        clusterHex = rgbToHex(
+          Math.round(sumRgb[0] / cluster.books.length),
+          Math.round(sumRgb[1] / cluster.books.length),
+          Math.round(sumRgb[2] / cluster.books.length)
+        );
+      }
+
+      return {
+        id: cluster.id,
+        name: cluster.colorName,
+        colorName: cluster.colorName,
+        colorFamily: cluster.colorFamily,
+        color: clusterHex,
+        hex: clusterHex,
+        textColor: getContrastTextColor(clusterHex),
+        value: Math.max(0.01, cluster.totalVal),
+        count: cluster.books.length,
+        durationHours: cluster.totalHours,
+        fileSizeBytes: cluster.totalBytes,
+        audiobook: cluster.books[0],
+        audiobooks: cluster.books,
+        percentage: Number(pct.toFixed(1))
+      };
+    })
+  };
+
+  const root = hierarchy(rootData)
+    .sum(d => (d as any).value || 0)
+    .sort((a, b) => ((b as any).value || 0) - ((a as any).value || 0));
+
+  const treemapLayout = treemap<any>()
+    .size([width, height])
+    .paddingOuter(0)
+    .paddingInner(padding)
+    .round(true)
+    .tile(treemapSquarify.ratio(1.3));
+
+  treemapLayout(root);
+
+  const nodes: TreemapNode[] = [];
+  root.leaves().forEach((leaf: any) => {
+    const d = leaf.data;
+    nodes.push({
+      id: d.id,
+      name: d.name,
+      value: leaf.value,
+      count: d.count,
+      durationHours: d.durationHours,
+      fileSizeBytes: d.fileSizeBytes,
+      percentage: d.percentage,
+      color: d.color,
+      hex: d.hex,
+      colorName: d.colorName,
+      colorFamily: d.colorFamily,
+      textColor: d.textColor,
+      audiobook: d.audiobook,
+      audiobooks: d.audiobooks,
+      x0: leaf.x0,
+      y0: leaf.y0,
+      x1: leaf.x1,
+      y1: leaf.y1,
+    });
+  });
+
+  return nodes;
+}
 
 /**
  * Builds a hierarchical Treemap layout for D3 calculation
@@ -16,7 +304,7 @@ export function buildTreemapHierarchy(
   metric: TreemapMetric,
   width: number,
   height: number,
-  padding: number = 3
+  padding: number = 2
 ): TreemapNode[] {
   if (!books || books.length === 0 || width <= 0 || height <= 0) {
     return [];

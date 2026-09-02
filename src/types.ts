@@ -50,6 +50,7 @@ export interface TreemapNode {
   id: string;
   value: number; // computed size
   count?: number;
+  percentage?: number;
   durationHours?: number;
   fileSizeBytes?: number;
   color: string;
