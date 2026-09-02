@@ -24,7 +24,7 @@ I asked in the Audiobookshelf (ABS) community if someone could build a cover col
 
 ### 1. Clone & Install
 ```bash
-git clone https://github.com/your-username/is-it-pink.git
+git clone https://github.com/raviwarrier/is-it-pink.git
 cd is-it-pink
 npm install
 ```
