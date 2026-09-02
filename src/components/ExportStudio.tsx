@@ -12,6 +12,7 @@ import {
   ReportOptions 
 } from '../types';
 import { formatHours, formatBytes, COLOR_FAMILY_PALETTES } from '../utils/colorUtils';
+import { downloadMapDataAsJson } from '../utils/storageUtils';
 import { 
   Share2, 
   Download, 
@@ -25,7 +26,8 @@ import {
   Sliders, 
   Palette, 
   Table,
-  CheckCircle2
+  CheckCircle2,
+  FileJson
 } from 'lucide-react';
 
 interface ExportStudioProps {
@@ -267,13 +269,9 @@ export const ExportStudio: React.FC<ExportStudioProps> = ({
     link.click();
   };
 
-  // Download JSON Payload
+  // Download JSON Map Data Package
   const handleDownloadJson = () => {
-    const blob = new Blob([JSON.stringify({ libraryPath, stats, audiobooks }, null, 2)], { type: 'application/json' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `audiobooks-chromatic-data.json`;
-    link.click();
+    downloadMapDataAsJson(libraryPath, audiobooks);
   };
 
   const handleCopyPost = () => {

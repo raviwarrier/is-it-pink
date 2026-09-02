@@ -108,104 +108,180 @@ export function calculateColorDistance(hex1: string, hex2: string): number {
   return Math.sqrt(dL * dL + da * da + db * db);
 }
 
+export interface NamedColorShade {
+  name: string;
+  family: string;
+  hex: string;
+}
+
+export const NAMED_COLOR_PALETTE: NamedColorShade[] = [
+  // White & Light Gray
+  { name: 'Pure White', family: 'White', hex: '#FFFFFF' },
+  { name: 'Parchment White', family: 'White', hex: '#FBF8F3' },
+  { name: 'Alabaster Ivory', family: 'White', hex: '#F4F4F0' },
+  { name: 'Cream Ivory', family: 'White', hex: '#FFFDD0' },
+  { name: 'Light Mist Gray', family: 'White', hex: '#E2E8F0' },
+  { name: 'Silver Ash', family: 'White', hex: '#CBD5E1' },
+  { name: 'Pale Bone', family: 'White', hex: '#EAE6DF' },
+
+  // Black & Dark Gray
+  { name: 'Obsidian Black', family: 'Black', hex: '#0A0A0A' },
+  { name: 'Pitch Black', family: 'Black', hex: '#050505' },
+  { name: 'Charcoal Black', family: 'Black', hex: '#1E1E24' },
+  { name: 'Jet Black', family: 'Black', hex: '#121214' },
+  { name: 'Dark Slate Gray', family: 'Black', hex: '#2F3E46' },
+  { name: 'Gunmetal Gray', family: 'Black', hex: '#334155' },
+  { name: 'Onyx Black', family: 'Black', hex: '#0F172A' },
+
+  // Red
+  { name: 'Crimson Red', family: 'Red', hex: '#DC143C' },
+  { name: 'Deep Crimson', family: 'Red', hex: '#990000' },
+  { name: 'Ruby Red', family: 'Red', hex: '#E0115F' },
+  { name: 'Scarlet Red', family: 'Red', hex: '#FF2400' },
+  { name: 'Cherry Red', family: 'Red', hex: '#D2042D' },
+  { name: 'Burgundy Wine', family: 'Red', hex: '#800020' },
+  { name: 'Maroon', family: 'Red', hex: '#800000' },
+  { name: 'Bordeaux', family: 'Red', hex: '#5C061C' },
+  { name: 'Brick Red', family: 'Red', hex: '#CB4154' },
+  { name: 'Cardinal Red', family: 'Red', hex: '#C41E3A' },
+  { name: 'Blood Red', family: 'Red', hex: '#CC1100' },
+  { name: 'Terracotta Rust', family: 'Red', hex: '#C84B31' },
+  { name: 'Vermilion', family: 'Red', hex: '#E34234' },
+  { name: 'Coral Rose', family: 'Red', hex: '#F88379' },
+  { name: 'Dark Mahogany', family: 'Red', hex: '#4A0E17' },
+
+  // Orange & Brown
+  { name: 'Amber Orange', family: 'Orange', hex: '#FFBF00' },
+  { name: 'Tangerine', family: 'Orange', hex: '#F28500' },
+  { name: 'Burnt Orange', family: 'Orange', hex: '#CC5500' },
+  { name: 'Apricot', family: 'Orange', hex: '#FBCEB1' },
+  { name: 'Peach', family: 'Orange', hex: '#FFDAB9' },
+  { name: 'Rust Orange', family: 'Orange', hex: '#B7410E' },
+  { name: 'Terracotta', family: 'Orange', hex: '#E2725B' },
+  { name: 'Coral Orange', family: 'Orange', hex: '#FF7F50' },
+  { name: 'Ochre Brown', family: 'Orange', hex: '#CC7722' },
+  { name: 'Saddle Brown', family: 'Orange', hex: '#8B4513' },
+  { name: 'Espresso Brown', family: 'Orange', hex: '#362218' },
+  { name: 'Chocolate Brown', family: 'Orange', hex: '#5D2E14' },
+  { name: 'Caramel Brown', family: 'Orange', hex: '#AF6E4D' },
+  { name: 'Cinnamon', family: 'Orange', hex: '#D2691E' },
+  { name: 'Sienna', family: 'Orange', hex: '#A0522D' },
+  { name: 'Umber Brown', family: 'Orange', hex: '#635147' },
+
+  // Yellow
+  { name: 'Canary Yellow', family: 'Yellow', hex: '#FFEF00' },
+  { name: 'Lemon Yellow', family: 'Yellow', hex: '#FFF44F' },
+  { name: 'Golden Yellow', family: 'Yellow', hex: '#FFD700' },
+  { name: 'Marigold Gold', family: 'Yellow', hex: '#EAA221' },
+  { name: 'Saffron Gold', family: 'Yellow', hex: '#F4C430' },
+  { name: 'Mustard Yellow', family: 'Yellow', hex: '#FFDB58' },
+  { name: 'Buttercream', family: 'Yellow', hex: '#FFFDD0' },
+  { name: 'Sunburst Yellow', family: 'Yellow', hex: '#FDB813' },
+  { name: 'Antique Ochre', family: 'Yellow', hex: '#CFB53B' },
+  { name: 'Cornsilk', family: 'Yellow', hex: '#FFF8DC' },
+
+  // Green
+  { name: 'Emerald Green', family: 'Green', hex: '#50C878' },
+  { name: 'Forest Green', family: 'Green', hex: '#228B22' },
+  { name: 'Pine Green', family: 'Green', hex: '#01796F' },
+  { name: 'Dark Cypress Green', family: 'Green', hex: '#0A3D2A' },
+  { name: 'Olive Green', family: 'Green', hex: '#808000' },
+  { name: 'Dark Olive', family: 'Green', hex: '#556B2F' },
+  { name: 'Moss Green', family: 'Green', hex: '#8A9A5B' },
+  { name: 'Sage Celadon', family: 'Green', hex: '#9CAF88' },
+  { name: 'Seafoam Mint', family: 'Green', hex: '#9FE2BF' },
+  { name: 'Mint Green', family: 'Green', hex: '#98FF98' },
+  { name: 'Lime Green', family: 'Green', hex: '#32CD32' },
+  { name: 'Chartreuse Lime', family: 'Green', hex: '#7FFF00' },
+  { name: 'Jade Green', family: 'Green', hex: '#00A86B' },
+  { name: 'Hunter Green', family: 'Green', hex: '#355E3B' },
+  { name: 'Viridian Moss', family: 'Green', hex: '#40826D' },
+  { name: 'Jungle Green', family: 'Green', hex: '#29AB87' },
+
+  // Blue
+  { name: 'Glacial Ice Blue', family: 'Blue', hex: '#D6EAF8' },
+  { name: 'Cyberpunk Cyan', family: 'Blue', hex: '#00E5FF' },
+  { name: 'Aqua Turquoise', family: 'Blue', hex: '#40E0D0' },
+  { name: 'Cyan Teal', family: 'Blue', hex: '#00A896' },
+  { name: 'Deep Teal', family: 'Blue', hex: '#005F73' },
+  { name: 'Dark Teal Abyss', family: 'Blue', hex: '#003844' },
+  { name: 'Sky Cerulean', family: 'Blue', hex: '#56CCF2' },
+  { name: 'Cerulean Blue', family: 'Blue', hex: '#007BA7' },
+  { name: 'Dodger Blue', family: 'Blue', hex: '#1E90FF' },
+  { name: 'Cornflower Blue', family: 'Blue', hex: '#6495ED' },
+  { name: 'Steel Sapphire Blue', family: 'Blue', hex: '#4682B4' },
+  { name: 'Cobalt Royal Blue', family: 'Blue', hex: '#0047AB' },
+  { name: 'Royal Blue', family: 'Blue', hex: '#4169E1' },
+  { name: 'Electric Azure Blue', family: 'Blue', hex: '#0066FF' },
+  { name: 'Deep Ocean Blue', family: 'Blue', hex: '#0B3C5D' },
+  { name: 'Denim Blue', family: 'Blue', hex: '#1560BD' },
+  { name: 'Midnight Navy', family: 'Blue', hex: '#001F3F' },
+  { name: 'Deep Abyss Navy', family: 'Blue', hex: '#0A192F' },
+  { name: 'Prussian Blue', family: 'Blue', hex: '#003153' },
+  { name: 'Periwinkle Blue', family: 'Blue', hex: '#8DA4C4' },
+  { name: 'Powder Blue', family: 'Blue', hex: '#B0E0E6' },
+  { name: 'Slate Blue', family: 'Blue', hex: '#475569' },
+
+  // Indigo
+  { name: 'Electric Indigo', family: 'Indigo', hex: '#4B0082' },
+  { name: 'Deep Night Indigo', family: 'Indigo', hex: '#1A1147' },
+  { name: 'Dark Indigo', family: 'Indigo', hex: '#2E1A47' },
+  { name: 'Twilight Slate Indigo', family: 'Indigo', hex: '#3F2B96' },
+  { name: 'Persian Indigo', family: 'Indigo', hex: '#32127A' },
+  { name: 'Lavender Indigo', family: 'Indigo', hex: '#9482C9' },
+  { name: 'Denim Indigo', family: 'Indigo', hex: '#2B3A67' },
+
+  // Violet
+  { name: 'Royal Amethyst', family: 'Violet', hex: '#7C3AED' },
+  { name: 'Deep Astral Violet', family: 'Violet', hex: '#4B0076' },
+  { name: 'Lavender Mist', family: 'Violet', hex: '#E6E6FA' },
+  { name: 'Lilac Violet', family: 'Violet', hex: '#C8A2C8' },
+  { name: 'Orchid Violet', family: 'Violet', hex: '#DA70D6' },
+  { name: 'Deep Aubergine', family: 'Violet', hex: '#3D0734' },
+  { name: 'Grape Violet', family: 'Violet', hex: '#6F2DA8' },
+  { name: 'Muted Heather Violet', family: 'Violet', hex: '#B7A8B8' },
+
+  // Pink
+  { name: 'Blush Rose', family: 'Pink', hex: '#FFB6C1' },
+  { name: 'Vibrant Magenta', family: 'Pink', hex: '#FF00FF' },
+  { name: 'Hot Pink', family: 'Pink', hex: '#FF69B4' },
+  { name: 'Deep Plum Wine', family: 'Pink', hex: '#581845' },
+  { name: 'Mulberry Wine', family: 'Pink', hex: '#8B008B' },
+  { name: 'Coral Pink', family: 'Pink', hex: '#F88379' },
+  { name: 'Salmon Rose', family: 'Pink', hex: '#FF91A4' },
+  { name: 'Dusty Rose', family: 'Pink', hex: '#DCAE96' },
+  { name: 'Bubblegum Pink', family: 'Pink', hex: '#FE5DA8' },
+  { name: 'Raspberry Pink', family: 'Pink', hex: '#E30B5C' },
+];
+
 /**
- * Detailed shade naming for fine-grained color classification
+ * Finds the closest named color in the palette using CIELAB Delta-E distance
  */
-export function getGranularShadeName(h: number, s: number, l: number): string {
-  // Achromatics
-  if (l >= 90) return 'Parchment White';
-  if (l >= 78 && s < 40) return 'Alabaster Ivory';
-  if (s < 18 && l > 50) return 'Light Mist Gray';
-  if (l <= 14) return 'Obsidian Black';
-  if (l <= 25 && s < 30) return 'Charcoal Black';
-  if (s < 25 && l <= 50) return 'Dark Slate Gray';
+export function getClosestNamedColor(hex: string, restrictToFamily?: string): NamedColorShade {
+  const [L1, a1, b1] = hexToLab(hex);
+  let bestShade = NAMED_COLOR_PALETTE[0];
+  let minDistance = Infinity;
 
-  // Earthy Browns in low-lightness warm hues
-  if (h >= 15 && h < 45 && l < 40 && s < 70) {
-    if (l < 22) return 'Deep Espresso Brown';
-    if (l < 32) return 'Warm Saddle Brown';
-    return 'Umber Clay Brown';
-  }
+  const candidates = restrictToFamily 
+    ? NAMED_COLOR_PALETTE.filter(p => p.family === restrictToFamily)
+    : NAMED_COLOR_PALETTE;
 
-  // Red Spectrum
-  if (h >= 348 || h < 15) {
-    if (l < 22) return 'Deep Maroon';
-    if (l < 35 && s >= 60) return 'Deep Crimson';
-    if (l < 35 && s < 60) return 'Burgundy Wine';
-    if (l > 65) return 'Coral Rose';
-    if (s < 55) return 'Terracotta Rust';
-    return 'Ruby Vermilion';
-  }
+  const searchList = candidates.length > 0 ? candidates : NAMED_COLOR_PALETTE;
 
-  // Orange Spectrum
-  if (h >= 15 && h < 45) {
-    if (l < 38) return 'Terracotta Sienna';
-    if (l > 65) return 'Apricot Sunset';
-    if (h >= 32) return 'Warm Amber';
-    return 'Burnt Tangerine';
-  }
+  for (const item of searchList) {
+    const [L2, a2, b2] = hexToLab(item.hex);
+    const dL = L1 - L2;
+    const da = a1 - a2;
+    const db = b1 - b2;
+    const dist = Math.sqrt(dL * dL + da * da + db * db);
 
-  // Yellow Spectrum
-  if (h >= 45 && h < 70) {
-    if (l < 35) return 'Antique Ochre';
-    if (l > 68) return 'Canary Lemon';
-    if (h < 55) return 'Marigold Gold';
-    return 'Saffron Gold';
-  }
-
-  // Green Spectrum
-  if (h >= 70 && h < 165) {
-    if (l < 24) return 'Dark Forest Pine';
-    if (l < 38 && s >= 50) return 'Forest Emerald';
-    if (l < 38 && s < 50) return 'Deep Olive';
-    if (l > 65) return 'Sage Celadon';
-    if (h < 105) return 'Chartreuse Lime';
-    if (h >= 140) return 'Seafoam Mint';
-    return 'Viridian Moss';
-  }
-
-  // Blue Spectrum (Fine-grained to distinguish Cyan, Sky, Cerulean, Cobalt, Royal, Navy)
-  if (h >= 165 && h < 225) {
-    if (l < 20) return 'Midnight Navy';
-    if (h < 185) {
-      if (l > 60) return 'Glacial Cyan';
-      if (l < 35) return 'Dark Teal Abyss';
-      return 'Cyberpunk Cyan';
+    if (dist < minDistance) {
+      minDistance = dist;
+      bestShade = item;
     }
-    if (h >= 185 && h < 205) {
-      if (l > 55) return 'Sky Cerulean';
-      if (l < 32) return 'Deep Ocean Blue';
-      return 'Cerulean Blue';
-    }
-    // h >= 205 to 225
-    if (l > 60) return 'Periwinkle Blue';
-    if (l < 32) return 'Deep Highstorm Cobalt';
-    if (s > 70) return 'Cobalt Royal Blue';
-    return 'Steel Sapphire Blue';
   }
 
-  // Indigo Spectrum
-  if (h >= 225 && h < 260) {
-    if (l < 22) return 'Deep Night Indigo';
-    if (l > 60) return 'Lavender Indigo';
-    if (s < 50) return 'Twilight Slate Indigo';
-    return 'Electric Indigo';
-  }
-
-  // Violet Spectrum
-  if (h >= 260 && h < 295) {
-    if (l < 24) return 'Deep Astral Violet';
-    if (l > 65) return 'Lavender Mist';
-    if (s < 50) return 'Muted Heather Violet';
-    return 'Royal Amethyst';
-  }
-
-  // Pink Spectrum
-  if (l < 28) return 'Deep Plum';
-  if (l < 46) return 'Mulberry Wine';
-  if (l > 70) return 'Blush Rose';
-  if (s > 70) return 'Vibrant Magenta';
-  return 'Coral Pink';
+  return bestShade;
 }
 
 export function classifyColor(r: number, g: number, b: number): DominantColorInfo {
@@ -214,7 +290,6 @@ export function classifyColor(r: number, g: number, b: number): DominantColorInf
   const lum = getLuminance(r, g, b);
 
   let colorFamily = 'Black';
-  let colorName = getGranularShadeName(h, s, l);
 
   // Neutrals / Achromatic & Extreme Luminance Bounds:
   const isWhiteOrLightGray = (l >= 84) || (l >= 72 && s < 55) || (s < 28 && l > 50);
@@ -250,6 +325,10 @@ export function classifyColor(r: number, g: number, b: number): DominantColorInf
       colorFamily = 'Pink';
     }
   }
+
+  // Use CIELAB Delta-E to match the exact, accurate sub-color shade within this family
+  const closest = getClosestNamedColor(hex, colorFamily);
+  const colorName = closest.name;
 
   return {
     hex,

@@ -19,7 +19,8 @@ import {
   BookCheck,
   Library,
   ShieldCheck,
-  Settings2
+  Settings2,
+  FileJson
 } from 'lucide-react';
 import { TreemapMetric, LibraryStats, LibraryMode, AudiobookshelfConfig } from '../types';
 import { formatHours } from '../utils/colorUtils';
@@ -40,6 +41,7 @@ interface HeaderProps {
   onOpenAbsModal: () => void;
   absConfig: AudiobookshelfConfig | null;
   readCount: number;
+  onOpenMapDataModal: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -57,7 +59,8 @@ export const Header: React.FC<HeaderProps> = ({
   onLibraryModeChange,
   onOpenAbsModal,
   absConfig,
-  readCount
+  readCount,
+  onOpenMapDataModal
 }) => {
   return (
     <header id="app-header" className="sticky top-0 z-40 bg-[#12151A] border-b border-zinc-800/80 shadow-xl">
@@ -188,6 +191,18 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
               </button>
             )}
+
+            {/* Save / Load Map JSON Button */}
+            <button
+              id="header-map-data-btn"
+              onClick={onOpenMapDataModal}
+              title="Save map results to JSON, load map file, or manage auto-save cache"
+              className="flex items-center gap-1.5 px-3 py-2 bg-zinc-850 hover:bg-zinc-800 text-zinc-200 border border-zinc-700/80 rounded-lg text-xs font-medium transition-all shadow-sm cursor-pointer"
+            >
+              <FileJson className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="hidden md:inline">Save / Load Map</span>
+              <span className="md:hidden">JSON</span>
+            </button>
 
             {/* Quick Metrics Badge */}
             <div className="hidden xl:flex items-center gap-2 pl-2 border-l border-zinc-800 text-xs text-zinc-400">

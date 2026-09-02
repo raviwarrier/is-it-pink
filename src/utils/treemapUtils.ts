@@ -8,10 +8,9 @@ import { Audiobook, TreemapMetric, TreemapNode, TreemapViewType } from '../types
 import { 
   getContrastTextColor, 
   COLOR_FAMILY_PALETTES, 
-  calculateColorDistance, 
+  getClosestNamedColor, 
   hexToRgb, 
-  rgbToHex,
-  getGranularShadeName 
+  rgbToHex 
 } from './colorUtils';
 
 /**
@@ -120,8 +119,8 @@ export function buildFamilyContiguousTreemap(
 
 /**
  * Level 2: Builds breakup Treemap for sub-colors of a specific color family.
- * Books sharing the same main color / sub-color within a perceptual tolerance range (Delta-E <= 14)
- * are clubbed under the same sub-color block.
+ * Books sharing the same named sub-color shade are clubbed under a single consolidated block.
+ * Each block has a distinct, accurate color name and displays `count - % of sub-color`.
  * Gaps between blocks are minimal (padding: 1).
  */
 export function buildFamilyBreakupTreemap(
@@ -129,8 +128,7 @@ export function buildFamilyBreakupTreemap(
   metric: TreemapMetric,
   width: number,
   height: number,
-  padding: number = 1,
-  colorToleranceDeltaE: number = 14.0
+  padding: number = 1
 ): TreemapNode[] {
   if (!books || books.length === 0 || width <= 0 || height <= 0) {
     return [];
@@ -144,84 +142,53 @@ export function buildFamilyBreakupTreemap(
 
   const totalMetricVal = books.reduce((sum, b) => sum + getValue(b), 0);
 
-  // Sort books by HSL (Hue, then Lightness, then Saturation) for coherent cluster grouping
-  const sortedBooks = [...books].sort((a, b) => {
-    const hslA = a.dominantColor.hsl;
-    const hslB = b.dominantColor.hsl;
-    if (hslA[0] !== hslB[0]) return hslA[0] - hslB[0];
-    if (hslA[2] !== hslB[2]) return hslA[2] - hslB[2];
-    return hslA[1] - hslB[1];
-  });
-
-  interface SubColorCluster {
-    id: string;
+  // Group books by their distinct named sub-color within the color family
+  const subColorMap: Record<string, {
     colorName: string;
     colorFamily: string;
-    representativeHex: string;
-    allHexes: string[];
+    fallbackHex: string;
     books: Audiobook[];
     totalVal: number;
     totalHours: number;
     totalBytes: number;
-  }
+  }> = {};
 
-  const clusters: SubColorCluster[] = [];
+  books.forEach(book => {
+    const fam = book.dominantColor.colorFamily || (book.dominantColor.luminance > 0.5 ? 'White' : 'Black');
+    const matchedShade = getClosestNamedColor(book.dominantColor.hex, fam);
+    const shadeName = matchedShade.name;
 
-  // Group books by perceptual color tolerance
-  sortedBooks.forEach(book => {
-    const bookHex = book.dominantColor.hex;
-    const val = getValue(book);
-
-    // Find the closest existing cluster within tolerance range
-    let bestCluster: SubColorCluster | null = null;
-    let minDistance = Infinity;
-
-    for (const cluster of clusters) {
-      const dist = calculateColorDistance(bookHex, cluster.representativeHex);
-      if (dist <= colorToleranceDeltaE && dist < minDistance) {
-        minDistance = dist;
-        bestCluster = cluster;
-      }
-    }
-
-    if (bestCluster) {
-      bestCluster.books.push(book);
-      bestCluster.allHexes.push(bookHex);
-      bestCluster.totalVal += val;
-      bestCluster.totalHours += book.durationHours;
-      bestCluster.totalBytes += book.fileSizeBytes;
-    } else {
-      // Form a new sub-color cluster
-      const [h, s, l] = book.dominantColor.hsl;
-      const colorName = book.dominantColor.colorName || getGranularShadeName(h, s, l);
-      const fam = book.dominantColor.colorFamily || (book.dominantColor.luminance > 0.5 ? 'White' : 'Black');
-
-      clusters.push({
-        id: `subcolor-${colorName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}-${clusters.length + 1}`,
-        colorName,
+    if (!subColorMap[shadeName]) {
+      subColorMap[shadeName] = {
+        colorName: shadeName,
         colorFamily: fam,
-        representativeHex: bookHex,
-        allHexes: [bookHex],
-        books: [book],
-        totalVal: val,
-        totalHours: book.durationHours,
-        totalBytes: book.fileSizeBytes
-      });
+        fallbackHex: matchedShade.hex,
+        books: [],
+        totalVal: 0,
+        totalHours: 0,
+        totalBytes: 0,
+      };
     }
+
+    const val = getValue(book);
+    subColorMap[shadeName].books.push(book);
+    subColorMap[shadeName].totalVal += val;
+    subColorMap[shadeName].totalHours += book.durationHours;
+    subColorMap[shadeName].totalBytes += book.fileSizeBytes;
   });
 
   // Sort sub-colors descending by total metric value
-  const sortedClusters = clusters.sort((a, b) => b.totalVal - a.totalVal);
+  const sortedSubColors = Object.values(subColorMap).sort((a, b) => b.totalVal - a.totalVal);
 
   const rootData = {
     name: 'FamilyRoot',
-    children: sortedClusters.map((cluster) => {
-      const pct = totalMetricVal > 0 ? (cluster.totalVal / totalMetricVal) * 100 : 0;
+    children: sortedSubColors.map((sc) => {
+      const pct = totalMetricVal > 0 ? (sc.totalVal / totalMetricVal) * 100 : 0;
 
-      // Calculate representative cluster hex
-      let clusterHex = cluster.representativeHex;
-      if (cluster.books.length > 1) {
-        const sumRgb = cluster.books.reduce(
+      // Calculate representative cluster hex by averaging the books' actual hexes
+      let clusterHex = sc.fallbackHex;
+      if (sc.books.length > 0) {
+        const sumRgb = sc.books.reduce(
           (acc, b) => {
             const [r, g, bl] = hexToRgb(b.dominantColor.hex);
             return [acc[0] + r, acc[1] + g, acc[2] + bl];
@@ -229,26 +196,26 @@ export function buildFamilyBreakupTreemap(
           [0, 0, 0]
         );
         clusterHex = rgbToHex(
-          Math.round(sumRgb[0] / cluster.books.length),
-          Math.round(sumRgb[1] / cluster.books.length),
-          Math.round(sumRgb[2] / cluster.books.length)
+          Math.round(sumRgb[0] / sc.books.length),
+          Math.round(sumRgb[1] / sc.books.length),
+          Math.round(sumRgb[2] / sc.books.length)
         );
       }
 
       return {
-        id: cluster.id,
-        name: cluster.colorName,
-        colorName: cluster.colorName,
-        colorFamily: cluster.colorFamily,
+        id: `breakup-subcolor-${sc.colorName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`,
+        name: sc.colorName,
+        colorName: sc.colorName,
+        colorFamily: sc.colorFamily,
         color: clusterHex,
         hex: clusterHex,
         textColor: getContrastTextColor(clusterHex),
-        value: Math.max(0.01, cluster.totalVal),
-        count: cluster.books.length,
-        durationHours: cluster.totalHours,
-        fileSizeBytes: cluster.totalBytes,
-        audiobook: cluster.books[0],
-        audiobooks: cluster.books,
+        value: Math.max(0.01, sc.totalVal),
+        count: sc.books.length,
+        durationHours: sc.totalHours,
+        fileSizeBytes: sc.totalBytes,
+        audiobook: sc.books[0],
+        audiobooks: sc.books,
         percentage: Number(pct.toFixed(1))
       };
     })

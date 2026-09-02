@@ -3,10 +3,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Audiobook, TreemapMetric, ActiveFilters, LibraryMode, AudiobookshelfConfig } from './types';
 import { SAMPLE_LIBRARIES, DEFAULT_SAMPLE_AUDIOBOOKS } from './data/sampleAudiobooks';
 import { calculateLibraryStats } from './utils/treemapUtils';
+import { 
+  loadLibraryFromLocalStorage, 
+  loadShelfFromLocalStorage, 
+  saveLibraryToLocalStorage, 
+  saveShelfToLocalStorage, 
+  clearLocalStorageData,
+  SavedMapPackage 
+} from './utils/storageUtils';
 import { Header } from './components/Header';
 import { DominantColorTreemap } from './components/DominantColorTreemap';
 import { MultiTreemapView } from './components/MultiTreemapView';
@@ -15,17 +23,37 @@ import { ExportStudio } from './components/ExportStudio';
 import { PathScannerModal } from './components/PathScannerModal';
 import { AudiobookDetailModal } from './components/AudiobookDetailModal';
 import { AudiobookshelfModal } from './components/AudiobookshelfModal';
+import { MapDataModal } from './components/MapDataModal';
 
 export function App() {
+  // Load saved state from localStorage if present
+  const savedLibrary = useMemo(() => loadLibraryFromLocalStorage(), []);
+  const savedShelf = useMemo(() => loadShelfFromLocalStorage(), []);
+
   // Entire Library Books state
-  const [entireLibraryBooks, setEntireLibraryBooks] = useState<Audiobook[]>(DEFAULT_SAMPLE_AUDIOBOOKS);
-  const [libraryPath, setLibraryPath] = useState<string>('/media/audiobooks/curated_speculative_fiction');
+  const [entireLibraryBooks, setEntireLibraryBooks] = useState<Audiobook[]>(() => {
+    return savedLibrary?.books && savedLibrary.books.length > 0
+      ? savedLibrary.books
+      : DEFAULT_SAMPLE_AUDIOBOOKS;
+  });
+  
+  const [libraryPath, setLibraryPath] = useState<string>(() => {
+    return savedLibrary?.path || '/media/audiobooks/curated_speculative_fiction';
+  });
   
   // Library Mode Toggle (Option 1: Entire Library vs Option 2: My Reading Analysis)
   const [libraryMode, setLibraryMode] = useState<LibraryMode>('entireLibrary');
-  const [readListBooks, setReadListBooks] = useState<Audiobook[]>([]);
-  const [absConfig, setAbsConfig] = useState<AudiobookshelfConfig | null>(null);
+  const [readListBooks, setReadListBooks] = useState<Audiobook[]>(() => {
+    return savedShelf?.books || [];
+  });
+  const [absConfig, setAbsConfig] = useState<AudiobookshelfConfig | null>(() => {
+    return savedShelf?.config || null;
+  });
   const [isAbsModalOpen, setIsAbsModalOpen] = useState<boolean>(false);
+  const [isMapDataModalOpen, setIsMapDataModalOpen] = useState<boolean>(false);
+  const [lastSavedTime, setLastSavedTime] = useState<string | null>(() => {
+    return savedLibrary?.timestamp || savedShelf?.timestamp || null;
+  });
 
   // Active collection based on toggle mode
   const currentAudiobooks = useMemo(() => {
@@ -81,6 +109,8 @@ export function App() {
     setAbsConfig(config);
     setReadListBooks(books);
     setLibraryMode('readList');
+    saveShelfToLocalStorage(config, books);
+    setLastSavedTime(new Date().toISOString());
     handleClearFilters();
   };
 
@@ -89,6 +119,35 @@ export function App() {
     setAbsConfig(null);
     setReadListBooks([]);
     setLibraryMode('entireLibrary');
+    saveShelfToLocalStorage(null, []);
+    handleClearFilters();
+  };
+
+  // Handle Loading Map Package from JSON File/Paste
+  const handleLoadMapData = (pkg: SavedMapPackage) => {
+    if (pkg.mode === 'readList') {
+      setReadListBooks(pkg.audiobooks);
+      setLibraryMode('readList');
+      saveShelfToLocalStorage(absConfig, pkg.audiobooks);
+    } else {
+      setEntireLibraryBooks(pkg.audiobooks);
+      setLibraryPath(pkg.nameOrPath || '/media/audiobooks/imported');
+      setLibraryMode('entireLibrary');
+      saveLibraryToLocalStorage(pkg.nameOrPath || '/media/audiobooks/imported', pkg.audiobooks);
+    }
+    setLastSavedTime(new Date().toISOString());
+    handleClearFilters();
+  };
+
+  // Reset to Default Sample Library
+  const handleResetToDefault = () => {
+    clearLocalStorageData();
+    setEntireLibraryBooks(DEFAULT_SAMPLE_AUDIOBOOKS);
+    setLibraryPath('/media/audiobooks/curated_speculative_fiction');
+    setReadListBooks([]);
+    setAbsConfig(null);
+    setLibraryMode('entireLibrary');
+    setLastSavedTime(null);
     handleClearFilters();
   };
 
@@ -115,6 +174,7 @@ export function App() {
         onOpenAbsModal={() => setIsAbsModalOpen(true)}
         absConfig={absConfig}
         readCount={readListBooks.length > 0 ? readListBooks.length : 16}
+        onOpenMapDataModal={() => setIsMapDataModalOpen(true)}
       />
 
       {/* Main View Container */}
@@ -174,9 +234,23 @@ export function App() {
           setLibraryPath(newPath);
           setEntireLibraryBooks(newBooks);
           setLibraryMode('entireLibrary');
+          saveLibraryToLocalStorage(newPath, newBooks);
+          setLastSavedTime(new Date().toISOString());
           handleClearFilters();
         }}
         sampleLibraries={SAMPLE_LIBRARIES}
+      />
+
+      {/* Map Data (Save / Load JSON & Cache) Modal */}
+      <MapDataModal
+        isOpen={isMapDataModalOpen}
+        onClose={() => setIsMapDataModalOpen(false)}
+        currentBooks={currentAudiobooks}
+        libraryPath={libraryPath}
+        libraryMode={libraryMode}
+        lastSavedTimestamp={lastSavedTime}
+        onLoadMapData={handleLoadMapData}
+        onResetToDefault={handleResetToDefault}
       />
 
       {/* Audiobookshelf "My Reading Analysis" Modal */}

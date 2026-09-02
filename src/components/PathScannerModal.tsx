@@ -17,12 +17,14 @@ import {
   Play,
   Square,
   Zap,
-  Gauge
+  Gauge,
+  FileJson
 } from 'lucide-react';
 import { Audiobook } from '../types';
 import { extractDominantColorFromImage, classifyColor } from '../utils/colorUtils';
 import { buildTreemapHierarchy } from '../utils/treemapUtils';
 import { generateLargeLibrary } from '../utils/megaLibraryGenerator';
+import { parseAndValidateMapJson } from '../utils/storageUtils';
 
 interface PathScannerModalProps {
   isOpen: boolean;
@@ -52,6 +54,27 @@ export const PathScannerModal: React.FC<PathScannerModalProps> = ({
   
   const scanCancelRef = useRef<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const jsonFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleJsonMapUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const content = ev.target?.result as string;
+      const res = parseAndValidateMapJson(content);
+      if (!res.valid || !res.data) {
+        setScanError(res.error || 'Failed to parse JSON map package.');
+        return;
+      }
+      setInputPath(res.data.nameOrPath);
+      runProgressiveScan(res.data.audiobooks, res.data.nameOrPath);
+    };
+    reader.onerror = () => {
+      setScanError('Failed to read the JSON file.');
+    };
+    reader.readAsText(file);
+  };
 
   // Progressive Treemap calculation for the modal canvas (width: 580, height: 190)
   const progressiveNodes = React.useMemo(() => {
@@ -468,14 +491,42 @@ export const PathScannerModal: React.FC<PathScannerModalProps> = ({
               </button>
             </div>
 
-            {/* Action 2: 4,700 Large Library Progressive Simulation */}
+            {/* Action 2: Load Saved Map JSON */}
             <div className="p-3.5 rounded-xl bg-zinc-850 border border-zinc-800 flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <Zap className="w-3.5 h-3.5 text-amber-200/90" />
-                  <span className="text-xs font-semibold text-zinc-200">4,700 Audiobooks</span>
+                  <FileJson className="w-3.5 h-3.5 text-indigo-400" />
+                  <span className="text-xs font-semibold text-zinc-200">Load Map File</span>
                 </div>
-                <p className="text-[10px] text-zinc-400 truncate">Live growth demonstration</p>
+                <p className="text-[10px] text-zinc-400 truncate">Import saved .json map package</p>
+              </div>
+
+              <input
+                type="file"
+                ref={jsonFileInputRef}
+                onChange={handleJsonMapUpload}
+                accept=".json,application/json"
+                className="hidden"
+              />
+
+              <button
+                onClick={() => jsonFileInputRef.current?.click()}
+                disabled={isScanning}
+                className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-xs font-medium rounded-full flex items-center gap-1.5 transition-colors shrink-0 cursor-pointer"
+              >
+                <FileJson className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Import</span>
+              </button>
+            </div>
+
+            {/* Action 3: 4,700 Large Library Progressive Simulation */}
+            <div className="p-3.5 rounded-xl bg-zinc-850 border border-zinc-800 flex items-center justify-between gap-2 sm:col-span-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5 text-amber-200/90" />
+                  <span className="text-xs font-semibold text-zinc-200">4,700 Audiobooks Progressive Benchmark</span>
+                </div>
+                <p className="text-[10px] text-zinc-400 truncate">Test real-time animated layout streaming with 4,700 books</p>
               </div>
 
               <button
