@@ -3,16 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Audiobook } from '../types';
 import { formatHours, formatBytes } from '../utils/colorUtils';
 import { normalizeAudiobook } from '../utils/treemapUtils';
 import { BookCoverOrColorBlock } from './BookCoverOrColorBlock';
 import { 
   X, 
-  Play, 
-  Pause, 
-  Volume2, 
   Copy, 
   Check, 
   Folder, 
@@ -23,6 +20,9 @@ import {
   Sparkles, 
   Layers, 
   FileText, 
+  Mic,
+  Calendar,
+  CheckCircle2,
   Image as ImageIcon 
 } from 'lucide-react';
 
@@ -41,24 +41,11 @@ export const AudiobookDetailModal: React.FC<AudiobookDetailModalProps> = ({
   onFilterAuthor,
   onFilterColorFamily
 }) => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [playbackProgress, setPlaybackProgress] = useState(15);
   const [copiedHex, setCopiedHex] = useState<string | null>(null);
 
   const audiobook = useMemo(() => {
     return rawAudiobook ? normalizeAudiobook(rawAudiobook) : null;
   }, [rawAudiobook]);
-
-  // Playback timer simulator
-  useEffect(() => {
-    let interval: any = null;
-    if (isPlaying) {
-      interval = setInterval(() => {
-        setPlaybackProgress(prev => (prev >= 100 ? 0 : prev + 1));
-      }, 500);
-    }
-    return () => clearInterval(interval);
-  }, [isPlaying]);
 
   if (!audiobook) return null;
 
@@ -88,7 +75,7 @@ export const AudiobookDetailModal: React.FC<AudiobookDetailModalProps> = ({
               style={{ backgroundColor: hex }}
             />
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300">
-              Level 3 • {colorName} ({hex}) • {colorFamily} Palette
+              {colorName} ({hex}) • {colorFamily} Palette
             </span>
           </div>
           <button
@@ -119,7 +106,7 @@ export const AudiobookDetailModal: React.FC<AudiobookDetailModalProps> = ({
                   <span className="font-semibold text-slate-300">Cover Artwork Source:</span>
                 </div>
                 <p className="text-[10px] font-mono text-slate-400 break-all leading-tight">
-                  {audiobook.coverPath || (audiobook.folderPath ? `${audiobook.folderPath}/cover.jpg` : 'Extracted from metadata')}
+                  {audiobook.coverPath || audiobook.coverUrl || (audiobook.folderPath ? `${audiobook.folderPath}/cover.jpg` : 'Local audio file artwork')}
                 </p>
               </div>
 
@@ -161,7 +148,7 @@ export const AudiobookDetailModal: React.FC<AudiobookDetailModalProps> = ({
               </div>
             </div>
 
-            {/* Right: Book Details & Audio Player */}
+            {/* Right: Book Details */}
             <div className="flex-1 space-y-4 min-w-0">
               
               <div>
@@ -184,58 +171,66 @@ export const AudiobookDetailModal: React.FC<AudiobookDetailModalProps> = ({
                 </p>
               </div>
 
-              {/* Simulated Audio Preview Player */}
-              <div className="p-4 bg-[#1F232B] border border-white/5 rounded-2xl space-y-3 shadow-inner">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => setIsPlaying(!isPlaying)}
-                      className="w-10 h-10 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center shadow-lg transition-transform hover:scale-105 cursor-pointer"
-                    >
-                      {isPlaying ? (
-                        <Pause className="w-5 h-5 fill-current" />
-                      ) : (
-                        <Play className="w-5 h-5 fill-current ml-0.5" />
-                      )}
-                    </button>
-                    <div>
-                      <p className="text-xs font-bold text-slate-200">
-                        {isPlaying ? 'Playing Chapter 1 Audio Sample...' : 'Audio Preview Player'}
-                      </p>
-                      <p className="text-[11px] text-slate-400">
-                        Narrated by {audiobook.narrator}
-                      </p>
-                    </div>
+              {/* Audiobook Metadata Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                <div className="p-3 bg-[#1F232B] border border-white/5 rounded-xl space-y-1">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <Mic className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                    <span>Narrator</span>
                   </div>
-
-                  {/* Animated Waveform indicator */}
-                  <div className="flex items-center gap-1 h-6">
-                    {[40, 70, 30, 90, 60, 45, 80, 50].map((h, i) => (
-                      <div
-                        key={i}
-                        className={`w-1 rounded-full transition-all duration-300 ${
-                          isPlaying ? 'bg-indigo-400' : 'bg-slate-700'
-                        }`}
-                        style={{
-                          height: isPlaying ? `${Math.max(20, (h * (playbackProgress % 3 + 1)) % 100)}%` : '25%'
-                        }}
-                      />
-                    ))}
-                  </div>
+                  <p className="text-xs font-semibold text-slate-200 truncate">
+                    {audiobook.narrator}
+                  </p>
                 </div>
 
-                {/* Progress Bar */}
-                <div className="space-y-1">
-                  <div className="w-full bg-[#0F1115] h-1.5 rounded-full overflow-hidden">
-                    <div 
-                      className="bg-indigo-500 h-full transition-all duration-300"
-                      style={{ width: `${playbackProgress}%` }}
-                    />
+                <div className="p-3 bg-[#1F232B] border border-white/5 rounded-xl space-y-1">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <Clock className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                    <span>Duration</span>
                   </div>
-                  <div className="flex justify-between text-[10px] font-mono text-slate-400">
-                    <span>0:00</span>
-                    <span>{formatHours(audiobook.durationHours)} Total</span>
+                  <p className="text-xs font-semibold text-slate-200 font-mono">
+                    {formatHours(audiobook.durationHours)}
+                  </p>
+                </div>
+
+                <div className="p-3 bg-[#1F232B] border border-white/5 rounded-xl space-y-1">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <Calendar className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                    <span>Year Published</span>
                   </div>
+                  <p className="text-xs font-semibold text-slate-200 font-mono">
+                    {audiobook.year}
+                  </p>
+                </div>
+
+                <div className="p-3 bg-[#1F232B] border border-white/5 rounded-xl space-y-1">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <HardDrive className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                    <span>File Size</span>
+                  </div>
+                  <p className="text-xs font-semibold text-slate-200 font-mono">
+                    {formatBytes(audiobook.fileSizeBytes)}
+                  </p>
+                </div>
+
+                <div className="p-3 bg-[#1F232B] border border-white/5 rounded-xl space-y-1">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <FileText className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                    <span>Audio Format</span>
+                  </div>
+                  <p className="text-xs font-semibold text-slate-200 font-mono uppercase">
+                    {audiobook.audioFormat} ({audiobook.bitrateKbps} kbps)
+                  </p>
+                </div>
+
+                <div className="p-3 bg-[#1F232B] border border-white/5 rounded-xl space-y-1">
+                  <div className="flex items-center gap-1.5 text-[11px] text-emerald-400">
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    <span>Shelf Status</span>
+                  </div>
+                  <p className="text-xs font-semibold text-emerald-300">
+                    Finished Read
+                  </p>
                 </div>
               </div>
 
@@ -256,7 +251,7 @@ export const AudiobookDetailModal: React.FC<AudiobookDetailModalProps> = ({
                   <span className="text-[10px] text-slate-400 font-normal">Click any hex to copy</span>
                 </h4>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {audiobook.palette.map((swatch, idx) => (
+                  {palette.map((swatch, idx) => (
                     <div
                       key={idx}
                       onClick={() => handleCopy(swatch.hex)}
@@ -283,20 +278,16 @@ export const AudiobookDetailModal: React.FC<AudiobookDetailModalProps> = ({
               <div className="pt-2 border-t border-white/5 space-y-2">
                 <div className="flex items-center gap-2 text-xs font-mono text-slate-400 bg-[#0F1115] px-3.5 py-2.5 rounded-xl border border-white/5 truncate">
                   <Folder className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                  <span className="text-slate-500">Audiobook Folder:</span>
+                  <span className="text-slate-500">Audiobook Source:</span>
                   <span className="truncate text-slate-300">{audiobook.folderPath}</span>
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-400 pt-1">
-                  <span className="px-2.5 py-0.5 bg-[#1F232B] rounded-full font-mono border border-white/5">
-                    Format: {audiobook.audioFormat.toUpperCase()} ({audiobook.bitrateKbps} kbps)
-                  </span>
-                  <span className="px-2.5 py-0.5 bg-[#1F232B] rounded-full font-mono border border-white/5">
-                    Size: {formatBytes(audiobook.fileSizeBytes)}
-                  </span>
-                  <span className="px-2.5 py-0.5 bg-[#1F232B] rounded-full border border-white/5">
-                    ⭐ {audiobook.rating} / 5.0
-                  </span>
+                  {audiobook.tags.map(tag => (
+                    <span key={tag} className="px-2.5 py-0.5 bg-[#1F232B] rounded-full font-mono text-zinc-400 border border-white/5">
+                      {tag}
+                    </span>
+                  ))}
                 </div>
               </div>
 

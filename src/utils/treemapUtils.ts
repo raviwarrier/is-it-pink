@@ -26,9 +26,9 @@ export function normalizeAudiobook(b: any, index: number = 0): Audiobook {
   const year = typeof b.year === 'number' && !isNaN(b.year) ? b.year : 2022;
   const durationHours = typeof b.durationHours === 'number' && !isNaN(b.durationHours) ? Math.max(0.1, b.durationHours) : 10;
   const fileSizeBytes = typeof b.fileSizeBytes === 'number' && !isNaN(b.fileSizeBytes) ? b.fileSizeBytes : 350 * 1024 * 1024;
-  const coverUrl = typeof b.coverUrl === 'string' ? b.coverUrl : '';
+  const coverUrl = typeof b.coverUrl === 'string' && b.coverUrl ? b.coverUrl : (typeof b.coverPath === 'string' && b.coverPath ? b.coverPath : '');
   const folderPath = b.folderPath || `/media/audiobooks/${title}`;
-  const coverPath = typeof b.coverPath === 'string' ? b.coverPath : (coverUrl || `${folderPath}/cover.jpg`);
+  const coverPath = typeof b.coverPath === 'string' && b.coverPath ? b.coverPath : (coverUrl || `${folderPath}/cover.jpg`);
   
   // Safe dominant color
   let dominantColor = b.dominantColor;

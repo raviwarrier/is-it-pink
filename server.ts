@@ -3,11 +3,15 @@ import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
+import sharp from "sharp";
 
 dotenv.config();
 
+// Allow local or self-hosted internal Audiobookshelf servers with self-signed SSL
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4260; // Defaults to 4260 to avoid collisions with other local apps on 3000
+const PORT = 3000;
 
 app.use(express.json({ limit: "25mb" }));
 
@@ -364,30 +368,33 @@ function getColorDetails(r: number, g: number, b: number) {
     h = h * 60;
   }
 
+  const sPct = Math.round(s * 100);
+  const lPct = Math.round(l * 100);
+
   let colorFamily = "Black";
-  const isWhiteOrLightGray = (l >= 0.84) || (l >= 0.72 && s < 0.55) || (s < 0.28 && l > 0.50);
-  const isBlackOrDarkGray = (l <= 0.14) || (l <= 0.22 && s < 0.55) || (s < 0.28 && l <= 0.50);
+  const isWhiteOrLightGray = (lPct >= 84) || (lPct >= 70 && sPct <= 32) || (sPct <= 14 && lPct >= 52);
+  const isBlackOrDarkGray = (lPct <= 18) || (lPct <= 28 && sPct <= 42) || (sPct <= 16 && lPct <= 52);
 
   if (isWhiteOrLightGray) {
     colorFamily = "White";
   } else if (isBlackOrDarkGray) {
     colorFamily = "Black";
   } else {
-    if ((h >= 15 && h < 45 && l < 0.42 && s < 0.75) || (h >= 15 && h < 40 && l < 0.32)) {
-      colorFamily = "Orange"; // Browns in Orange group
+    if ((h >= 15 && h < 48 && lPct < 44 && sPct < 80) || (h >= 15 && h < 42 && lPct < 34)) {
+      colorFamily = "Orange"; // Browns (Espresso, Saddle Brown, Chocolate, Sienna)
     } else if (h >= 348 || h < 15) {
       colorFamily = "Red";
     } else if (h >= 15 && h < 45) {
       colorFamily = "Orange";
-    } else if (h >= 45 && h < 70) {
-      colorFamily = (l < 0.32 && s < 0.60) ? "Orange" : "Yellow";
-    } else if (h >= 70 && h < 165) {
+    } else if (h >= 45 && h < 68) {
+      colorFamily = (lPct < 35 && sPct < 60) ? "Orange" : "Yellow";
+    } else if (h >= 68 && h < 165) {
       colorFamily = "Green";
     } else if (h >= 165 && h < 225) {
       colorFamily = "Blue";
     } else if (h >= 225 && h < 260) {
       colorFamily = "Indigo";
-    } else if (h >= 260 && h < 295) {
+    } else if (h >= 260 && h < 305) {
       colorFamily = "Violet";
     } else {
       colorFamily = "Pink";
@@ -416,214 +423,640 @@ function getColorDetails(r: number, g: number, b: number) {
   return {
     hex,
     rgb: [r, g, b] as [number, number, number],
-    hsl: [Math.round(h), Math.round(s * 100), Math.round(l * 100)] as [number, number, number],
+    hsl: [Math.round(h), sPct, lPct] as [number, number, number],
     colorName: bestShade.name,
     colorFamily,
     luminance: Number((0.2126 * rNorm + 0.7152 * gNorm + 0.0722 * bNorm).toFixed(3))
   };
 }
 
-// API: Audiobookshelf Zero-Trace Connect & Read Books Fetch Proxy
-// SECURITY GUARANTEE: API keys are used strictly in volatile RAM for the immediate HTTP request.
-// They are NEVER logged, persisted, or stored in any database or disk.
+// True Image Dominant Color & Palette Extraction using sharp & CIELAB Delta-E clustering
+async function extractColorsFromImageBuffer(buffer: Buffer): Promise<{
+  dominant: ReturnType<typeof getColorDetails>;
+  palette: Array<{ hex: string; colorName: string; percentage: number; rgb: [number, number, number] }>;
+} | null> {
+  try {
+    const { data, info } = await sharp(buffer)
+      .resize(48, 48, { fit: "cover", withoutEnlargement: false })
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const totalPixels = info.width * info.height;
+    const buckets: Record<string, { rSum: number; gSum: number; bSum: number; count: number }> = {};
+
+    for (let i = 0; i < data.length; i += 3) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+
+      const qR = Math.min(255, Math.floor(r / 16) * 16 + 8);
+      const qG = Math.min(255, Math.floor(g / 16) * 16 + 8);
+      const qB = Math.min(255, Math.floor(b / 16) * 16 + 8);
+      const key = `${qR},${qG},${qB}`;
+
+      if (!buckets[key]) {
+        buckets[key] = { rSum: 0, gSum: 0, bSum: 0, count: 0 };
+      }
+      buckets[key].rSum += r;
+      buckets[key].gSum += g;
+      buckets[key].bSum += b;
+      buckets[key].count++;
+    }
+
+    const rawBuckets = Object.values(buckets).sort((a, b) => b.count - a.count);
+    if (rawBuckets.length === 0) return null;
+
+    // Merge perceptually similar clusters using CIELAB Delta-E
+    const uniqueClusters: Array<{ r: number; g: number; b: number; count: number; hex: string }> = [];
+
+    for (const b of rawBuckets) {
+      const avgR = Math.round(b.rSum / b.count);
+      const avgG = Math.round(b.gSum / b.count);
+      const avgB = Math.round(b.bSum / b.count);
+      const hex = "#" + [avgR, avgG, avgB].map(x => x.toString(16).padStart(2, "0")).join("").toUpperCase();
+
+      let merged = false;
+      const [L1, a1, b1] = hexToLabServer(hex);
+
+      for (const u of uniqueClusters) {
+        const [L2, a2, b2] = hexToLabServer(u.hex);
+        const dist = Math.sqrt((L1 - L2) ** 2 + (a1 - a2) ** 2 + (b1 - b2) ** 2);
+        if (dist < 12) {
+          u.count += b.count;
+          merged = true;
+          break;
+        }
+      }
+
+      if (!merged) {
+        uniqueClusters.push({ r: avgR, g: avgG, b: avgB, count: b.count, hex });
+      }
+    }
+
+    uniqueClusters.sort((a, b) => b.count - a.count);
+
+    const dominantCluster = uniqueClusters[0] || { r: 24, g: 24, b: 28, count: totalPixels, hex: "#18181B" };
+    const dominant = getColorDetails(dominantCluster.r, dominantCluster.g, dominantCluster.b);
+
+    const totalSampled = uniqueClusters.reduce((acc, c) => acc + c.count, 0) || 1;
+    const palette = uniqueClusters.slice(0, 5).map(c => {
+      const details = getColorDetails(c.r, c.g, c.b);
+      return {
+        hex: details.hex,
+        colorName: details.colorName,
+        percentage: Math.max(5, Math.round((c.count / totalSampled) * 100)),
+        rgb: details.rgb
+      };
+    });
+
+    return { dominant, palette };
+  } catch (err) {
+    console.warn("sharp color extraction warning:", err);
+    return null;
+  }
+}
+
+// API: Audiobookshelf Cover Proxy
+app.get("/api/abs/cover", async (req, res) => {
+  try {
+    const { serverUrl, itemId, token } = req.query;
+    if (!serverUrl || !itemId) {
+      return res.status(400).send("Missing serverUrl or itemId");
+    }
+
+    const cleanBaseUrl = (serverUrl as string).trim().replace(/\/+$/, "");
+    const coverUrl = `${cleanBaseUrl}/api/items/${itemId}/cover${token ? `?token=${encodeURIComponent(token as string)}` : ""}`;
+    const headers: Record<string, string> = { 
+      "User-Agent": "Is-It-Pink-ABS-Client/1.0",
+      "Accept": "image/*"
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+      headers["x-api-key"] = token as string;
+    }
+
+    const absRes = await fetch(coverUrl, { headers });
+    if (!absRes.ok) {
+      return res.status(absRes.status).send("Cover not found");
+    }
+
+    const contentType = absRes.headers.get("content-type") || "image/jpeg";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    const buffer = Buffer.from(await absRes.arrayBuffer());
+    res.send(buffer);
+  } catch (err: any) {
+    res.status(500).send("Failed to proxy cover image");
+  }
+});
+
+// API: Local Cover Image Stream
+app.get("/api/local-cover", (req, res) => {
+  try {
+    const { filePath } = req.query;
+    if (!filePath || typeof filePath !== "string") {
+      return res.status(400).send("Missing filePath");
+    }
+
+    if (fs.existsSync(filePath)) {
+      const ext = path.extname(filePath).toLowerCase();
+      const mimeTypes: Record<string, string> = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".avif": "image/avif"
+      };
+      res.setHeader("Content-Type", mimeTypes[ext] || "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      return fs.createReadStream(filePath).pipe(res);
+    }
+    res.status(404).send("File not found");
+  } catch (e: any) {
+    res.status(500).send("Error reading cover file");
+  }
+});
+
+interface AbsProgressUpdate {
+  step: "connecting" | "connected" | "listing" | "extracting" | "complete" | "error";
+  message: string;
+  current?: number;
+  total?: number;
+  bookTitle?: string;
+  username?: string;
+  books?: any[];
+  serverUrl?: string;
+  error?: string;
+}
+
+// Helper: HSL to RGB conversion
+function hslToRgbValues(h: number, sPct: number, lPct: number): [number, number, number] {
+  const s = sPct / 100;
+  const l = lPct / 100;
+  const k = (n: number) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return [Math.round(255 * f(0)), Math.round(255 * f(8)), Math.round(255 * f(4))];
+}
+
+// Helper: Fast fetch with AbortSignal timeout
+async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 5000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
+
+// Helper: Generate deterministic aesthetic palette for books without covers or on timeout
+function generateDeterministicBookColor(title: string, author: string): { dominantColor: any; palette: any[] } {
+  const seed = `${title || 'Audiobook'}:${author || 'Author'}`;
+  let hash = 0;
+  for (let c = 0; c < seed.length; c++) {
+    hash = (hash << 5) - hash + seed.charCodeAt(c);
+    hash |= 0;
+  }
+  const h = Math.abs(hash) % 360;
+  const s = 48 + (Math.abs(hash >> 3) % 38);
+  const l = 32 + (Math.abs(hash >> 6) % 32);
+  const [r, g, b] = hslToRgbValues(h, s, l);
+  const dominantColor = getColorDetails(r, g, b);
+  const palette = [
+    { hex: dominantColor.hex, colorName: dominantColor.colorName, percentage: 65, rgb: dominantColor.rgb },
+    { hex: "#1E293B", colorName: "Slate Dark", percentage: 20, rgb: [30, 41, 59] as [number, number, number] },
+    { hex: "#F8FAFC", colorName: "Ice White", percentage: 15, rgb: [248, 250, 252] as [number, number, number] }
+  ];
+  return { dominantColor, palette };
+}
+
+// Core Audiobookshelf Read Shelf Extraction Engine
+async function extractAudiobookshelfReadShelf(
+  serverUrl: string,
+  apiToken: string,
+  onProgress?: (update: AbsProgressUpdate) => void
+) {
+  const cleanBaseUrl = serverUrl.trim().replace(/\/+$/, "");
+  const headers: Record<string, string> = {
+    "Authorization": `Bearer ${apiToken.trim()}`,
+    "x-api-key": apiToken.trim(),
+    "Accept": "application/json",
+    "User-Agent": "Is-It-Pink-ABS-Client/1.0"
+  };
+
+  onProgress?.({
+    step: "connecting",
+    message: `Connecting to Audiobookshelf server at ${cleanBaseUrl}...`
+  });
+
+  // 1. Verify credentials and get current user info + media progress
+  let userRes: Response;
+  try {
+    userRes = await fetchWithTimeout(`${cleanBaseUrl}/api/me`, { headers }, 8000);
+  } catch (networkErr: any) {
+    throw new Error(`Could not reach Audiobookshelf server at ${cleanBaseUrl}. Please verify URL and network connectivity.`);
+  }
+
+  if (!userRes.ok) {
+    if (userRes.status === 401 || userRes.status === 403) {
+      throw new Error(`Audiobookshelf authentication failed (Status ${userRes.status}). Please verify your API token in Audiobookshelf settings.`);
+    }
+    if (userRes.status === 404) {
+      throw new Error(`Audiobookshelf API endpoint not found at ${cleanBaseUrl} (Status 404). Please verify your server URL.`);
+    }
+    throw new Error(`Audiobookshelf server returned status ${userRes.status}. Please check your server.`);
+  }
+
+  const userData = await userRes.json();
+  const userObj = userData.user || userData;
+  const username = userObj.username || userObj.email || "Audiobookshelf Reader";
+
+  onProgress?.({
+    step: "connected",
+    username,
+    message: `Connected as ${username}. Checking listening history...`
+  });
+
+  const mediaProgress: any[] = userObj.mediaProgress || userData.mediaProgress || [];
+  
+  // Filter finished items
+  const finishedProgress = mediaProgress.filter((p: any) => 
+    p.isFinished === true || 
+    p.progress === 1 || 
+    p.progress >= 0.95 || 
+    (p.currentTime && p.duration && p.currentTime / p.duration >= 0.95) ||
+    Boolean(p.finishedAt)
+  );
+
+  const targetProgressList = finishedProgress.length > 0 
+    ? finishedProgress 
+    : (mediaProgress.length > 0 ? mediaProgress.filter((p: any) => (p.currentTime || 0) > 0) : mediaProgress);
+
+  // 2. Efficiently resolve item metadata without downloading the entire library
+  const itemCache: Record<string, any> = {};
+
+  // Check which items in targetProgressList lack metadata
+  const missingItemIds: string[] = [];
+  for (const prog of targetProgressList) {
+    const candidateId = prog.libraryItemId || prog.id || prog.mediaItemId;
+    const hasInlineMeta = Boolean(
+      prog.mediaItem?.metadata?.title || 
+      prog.libraryItem?.media?.metadata?.title || 
+      prog.title
+    );
+    if (!hasInlineMeta && candidateId) {
+      missingItemIds.push(candidateId);
+    }
+  }
+
+  // Fetch only missing items in small parallel batches with 3s timeout
+  if (missingItemIds.length > 0) {
+    const BATCH = 8;
+    for (let i = 0; i < missingItemIds.length; i += BATCH) {
+      const slice = missingItemIds.slice(i, i + BATCH);
+      const results = await Promise.allSettled(slice.map(id => 
+        fetchWithTimeout(`${cleanBaseUrl}/api/items/${id}`, { headers }, 3000)
+          .then(r => r.ok ? r.json() : null)
+      ));
+      for (let rIdx = 0; rIdx < results.length; rIdx++) {
+        const res = results[rIdx];
+        if (res.status === "fulfilled" && res.value) {
+          const item = res.value;
+          if (item.id) itemCache[item.id] = item;
+          if (item.media?.id) itemCache[item.media.id] = item;
+        }
+      }
+    }
+  }
+
+  // 3. Assemble raw list of books
+  const rawBookList: any[] = [];
+
+  if (targetProgressList.length > 0) {
+    for (const prog of targetProgressList) {
+      const candidateIds = [
+        prog.libraryItemId,
+        prog.id,
+        prog.mediaItemId,
+        prog.media?.libraryItemId,
+        prog.media?.id
+      ].filter(Boolean);
+
+      let itemDetail = prog.libraryItem || null;
+      if (!itemDetail) {
+        for (const cid of candidateIds) {
+          if (itemCache[cid]) {
+            itemDetail = itemCache[cid];
+            break;
+          }
+        }
+      }
+
+      const libraryItemId = itemDetail?.id || prog.libraryItemId || prog.id || prog.mediaItemId;
+      const media = itemDetail?.media || prog.mediaItem || {};
+      const meta = media.metadata || itemDetail?.metadata || {};
+
+      const title = meta.title 
+        || itemDetail?.title 
+        || prog.mediaItem?.metadata?.title 
+        || prog.title 
+        || `Audiobook ${String(libraryItemId).slice(0, 8)}`;
+
+      let author = meta.authorName;
+      if (!author && Array.isArray(meta.authors) && meta.authors.length > 0) {
+        author = typeof meta.authors[0] === 'string' ? meta.authors[0] : meta.authors[0]?.name;
+      }
+      if (!author && prog.mediaItem?.metadata?.authorName) {
+        author = prog.mediaItem.metadata.authorName;
+      }
+      if (!author && itemDetail?.author) {
+        author = itemDetail.author;
+      }
+      if (!author) {
+        author = "Unknown Author";
+      }
+
+      let narrator = meta.narratorName;
+      if (!narrator && Array.isArray(meta.narrators) && meta.narrators.length > 0) {
+        narrator = typeof meta.narrators[0] === 'string' ? meta.narrators[0] : meta.narrators[0]?.name;
+      }
+      if (!narrator) {
+        narrator = "Uncredited Narrator";
+      }
+
+      const rawYear = meta.publishedYear || meta.publishedDate?.slice(0, 4) || meta.year;
+      const year = parseInt(String(rawYear || "2022"), 10) || 2022;
+
+      const durationSeconds = media.duration || prog.duration || 36000;
+      const durationHours = Math.round((durationSeconds / 3600) * 10) / 10;
+
+      const fileSizeBytes = media.size || itemDetail?.size || (350 * 1024 * 1024);
+
+      const description = meta.description 
+        || itemDetail?.description 
+        || `Finished in your Audiobookshelf reading journey on ${prog.finishedAt ? new Date(prog.finishedAt).toLocaleDateString() : "recent session"}.`;
+
+      const genres = Array.isArray(meta.genres) && meta.genres.length > 0 
+        ? meta.genres 
+        : (Array.isArray(itemDetail?.genres) && itemDetail.genres.length > 0 ? itemDetail.genres : ["Audiobook"]);
+
+      const tags = Array.isArray(media.tags) && media.tags.length > 0 
+        ? media.tags 
+        : (Array.isArray(itemDetail?.tags) && itemDetail.tags.length > 0 ? itemDetail.tags : ["#Finished", "#ReadShelf"]);
+
+      rawBookList.push({
+        libraryItemId,
+        title,
+        author,
+        narrator,
+        year,
+        durationHours: Math.max(0.5, durationHours),
+        fileSizeBytes,
+        description,
+        genres,
+        tags,
+        isFinished: true,
+        finishedAt: prog.finishedAt || null
+      });
+    }
+  } else {
+    // If user has 0 mediaProgress items, query library items
+    try {
+      const librariesRes = await fetchWithTimeout(`${cleanBaseUrl}/api/libraries`, { headers }, 4000);
+      if (librariesRes.ok) {
+        const libData = await librariesRes.json();
+        const libraries = libData.libraries || [];
+        const bookLib = libraries.find((l: any) => l.mediaType === "book") || libraries[0];
+        if (bookLib) {
+          const itemsRes = await fetchWithTimeout(`${cleanBaseUrl}/api/libraries/${bookLib.id}/items?limit=40`, { headers }, 4000);
+          if (itemsRes.ok) {
+            const itemsData = await itemsRes.json();
+            const results = itemsData.results || [];
+            for (const item of results) {
+              const media = item.media || {};
+              const meta = media.metadata || {};
+              rawBookList.push({
+                libraryItemId: item.id,
+                title: meta.title || item.title || "Audiobook",
+                author: meta.authorName || (Array.isArray(meta.authors) ? meta.authors[0]?.name || meta.authors[0] : "Author"),
+                narrator: meta.narratorName || "Narrator",
+                year: parseInt(meta.publishedYear || meta.year || "2022", 10) || 2022,
+                durationHours: Math.max(0.5, Math.round(((media.duration || 36000) / 3600) * 10) / 10),
+                fileSizeBytes: media.size || (350 * 1024 * 1024),
+                description: meta.description || "Audiobook from your Audiobookshelf library.",
+                genres: Array.isArray(meta.genres) && meta.genres.length > 0 ? meta.genres : ["Audiobook"],
+                tags: ["#LibraryItem"],
+                isFinished: true
+              });
+            }
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (rawBookList.length === 0) {
+    throw new Error(`Connected successfully as ${username}, but no audiobooks were found in your listening history or library.`);
+  }
+
+  onProgress?.({
+    step: "listing",
+    total: rawBookList.length,
+    message: `Found ${rawBookList.length} read audiobooks. Analyzing cover artwork and extracting colors...`
+  });
+
+  // 4. Fetch actual cover artwork and extract real dominant colors in parallel with time budget
+  const readAudiobooks: any[] = [];
+  const BATCH_SIZE = 10;
+  const MAX_COVER_TIME_MS = 15000; // 15s budget to ensure rapid response well under Cloud Run 60s limit
+  const startTime = Date.now();
+
+  for (let i = 0; i < rawBookList.length; i += BATCH_SIZE) {
+    const batch = rawBookList.slice(i, i + BATCH_SIZE);
+    const timeSpent = Date.now() - startTime;
+    const shouldSkipCoverNetwork = timeSpent > MAX_COVER_TIME_MS;
+    
+    // Send progress event
+    const currentBook = batch[0];
+    onProgress?.({
+      step: "extracting",
+      current: Math.min(i + batch.length, rawBookList.length),
+      total: rawBookList.length,
+      bookTitle: currentBook.title,
+      message: `Analyzing cover artwork (${Math.min(i + batch.length, rawBookList.length)}/${rawBookList.length}): ${currentBook.title}`
+    });
+
+    const batchResults = await Promise.allSettled(batch.map(async (book) => {
+      const coverProxyUrl = `/api/abs/cover?serverUrl=${encodeURIComponent(cleanBaseUrl)}&itemId=${encodeURIComponent(book.libraryItemId)}&token=${encodeURIComponent(apiToken.trim())}`;
+      
+      // Request thumbnail webp if supported by ABS for ultra-fast download, fallback to standard cover
+      const coverDirectThumbnailUrl = `${cleanBaseUrl}/api/items/${book.libraryItemId}/cover?width=256&format=webp${apiToken ? `&token=${encodeURIComponent(apiToken.trim())}` : ""}`;
+      const coverDirectStandardUrl = `${cleanBaseUrl}/api/items/${book.libraryItemId}/cover${apiToken ? `?token=${encodeURIComponent(apiToken.trim())}` : ""}`;
+
+      let dominantColor: any = null;
+      let palette: any[] = [];
+      let hasCover = false;
+
+      if (!shouldSkipCoverNetwork) {
+        try {
+          let coverFetchRes: Response | null = null;
+          try {
+            coverFetchRes = await fetchWithTimeout(coverDirectThumbnailUrl, {
+              headers: {
+                "Authorization": `Bearer ${apiToken.trim()}`,
+                "x-api-key": apiToken.trim(),
+                "User-Agent": "Is-It-Pink-ABS-Client/1.0"
+              }
+            }, 2000);
+          } catch {
+            // fallback to standard url
+            coverFetchRes = await fetchWithTimeout(coverDirectStandardUrl, {
+              headers: {
+                "Authorization": `Bearer ${apiToken.trim()}`,
+                "x-api-key": apiToken.trim(),
+                "User-Agent": "Is-It-Pink-ABS-Client/1.0"
+              }
+            }, 2000);
+          }
+
+          if (coverFetchRes && coverFetchRes.ok) {
+            const imgBuffer = Buffer.from(await coverFetchRes.arrayBuffer());
+            if (imgBuffer.length > 0) {
+              const extracted = await extractColorsFromImageBuffer(imgBuffer);
+              if (extracted) {
+                dominantColor = extracted.dominant;
+                palette = extracted.palette;
+                hasCover = true;
+              }
+            }
+          }
+        } catch {
+          // Fallback to deterministic color
+        }
+      }
+
+      // If no cover was downloaded or network timed out, use deterministic palette
+      if (!dominantColor) {
+        const generated = generateDeterministicBookColor(book.title, book.author);
+        dominantColor = generated.dominantColor;
+        palette = generated.palette;
+      }
+
+      return {
+        id: book.libraryItemId,
+        title: book.title,
+        author: book.author,
+        narrator: book.narrator,
+        year: book.year,
+        durationHours: book.durationHours,
+        fileSizeBytes: book.fileSizeBytes,
+        folderPath: `${cleanBaseUrl}/api/items/${book.libraryItemId}`,
+        coverPath: coverProxyUrl,
+        coverUrl: coverProxyUrl,
+        hasCoverImage: hasCover,
+        dominantColor,
+        palette,
+        description: book.description,
+        rating: 4.8,
+        audioFormat: "m4b",
+        bitrateKbps: 128,
+        genres: book.genres,
+        tags: book.tags,
+        isFinished: book.isFinished,
+        finishedAt: book.finishedAt
+      };
+    }));
+
+    for (const res of batchResults) {
+      if (res.status === "fulfilled") {
+        readAudiobooks.push(res.value);
+      }
+    }
+  }
+
+  onProgress?.({
+    step: "complete",
+    username,
+    total: readAudiobooks.length,
+    books: readAudiobooks,
+    serverUrl: cleanBaseUrl,
+    message: `Analyzed ${readAudiobooks.length} audiobooks with chromatic color mapping!`
+  });
+
+  return {
+    success: true,
+    username,
+    totalReadBooks: readAudiobooks.length,
+    books: readAudiobooks,
+    serverUrl: cleanBaseUrl
+  };
+}
+
+// API: Audiobookshelf Real-Time Streaming Read Shelf Fetch (SSE)
+app.post("/api/abs/fetch-read-books-stream", async (req, res) => {
+  // CRITICAL: Headers for Google Cloud Run & Nginx unbuffered streaming
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform, no-store");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders?.();
+
+  // Send 2KB whitespace padding comment immediately to defeat reverse proxy buffers
+  res.write(`: ${" ".repeat(2048)}\n\n`);
+
+  const sendSse = (data: AbsProgressUpdate) => {
+    try {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+      if (typeof (res as any).flush === 'function') {
+        (res as any).flush();
+      }
+    } catch {
+      // client may have disconnected
+    }
+  };
+
+  try {
+    const { serverUrl, apiToken } = req.body;
+    if (!serverUrl || !apiToken) {
+      sendSse({ step: "error", error: "Missing serverUrl or apiToken", message: "Missing URL or API token" });
+      return res.end();
+    }
+
+    await extractAudiobookshelfReadShelf(serverUrl, apiToken, (update) => {
+      sendSse(update);
+    });
+
+    res.end();
+  } catch (err: any) {
+    sendSse({ step: "error", error: err.message || "Failed to communicate with Audiobookshelf server", message: err.message });
+    res.end();
+  }
+});
+
+// API: Audiobookshelf Standard JSON Fetch Proxy (Zero-Trace)
 app.post("/api/abs/fetch-read-books", async (req, res) => {
   try {
     const { serverUrl, apiToken } = req.body;
-
     if (!serverUrl || !apiToken) {
       return res.status(400).json({ error: "Missing serverUrl or apiToken" });
     }
 
-    const cleanBaseUrl = serverUrl.trim().replace(/\/+$/, "");
-    const headers = {
-      "Authorization": `Bearer ${apiToken.trim()}`,
-      "Accept": "application/json",
-      "User-Agent": "Is-It-Pink-ABS-Client/1.0"
-    };
-
-    // 1. Verify credentials and get current user info + media progress
-    let userRes: any;
-    try {
-      userRes = await fetch(`${cleanBaseUrl}/api/me`, { headers });
-    } catch (networkErr: any) {
-      return res.status(502).json({ 
-        error: `Could not reach Audiobookshelf server at ${cleanBaseUrl}. Please check URL and CORS/network accessibility.` 
-      });
-    }
-
-    if (!userRes.ok) {
-      return res.status(userRes.status).json({ 
-        error: `Audiobookshelf authentication failed (Status ${userRes.status}). Please verify your API token.` 
-      });
-    }
-
-    const userData = await userRes.json();
-    const mediaProgress = userData.mediaProgress || [];
-    
-    // Filter finished items (isFinished === true or progress === 1 or progress > 0.95)
-    const finishedProgress = mediaProgress.filter((p: any) => 
-      p.isFinished === true || 
-      p.progress === 1 || 
-      (p.currentTime && p.duration && p.currentTime / p.duration > 0.95)
-    );
-
-    // 2. Fetch libraries to get library items if needed
-    const librariesRes = await fetch(`${cleanBaseUrl}/api/libraries`, { headers });
-    let libraryItemsMap: Record<string, any> = {};
-
-    if (librariesRes.ok) {
-      const libData = await librariesRes.json();
-      const libraries = libData.libraries || [];
-
-      for (const lib of libraries) {
-        if (lib.mediaType === "book" || !lib.mediaType) {
-          try {
-            const itemsRes = await fetch(`${cleanBaseUrl}/api/libraries/${lib.id}/items?limit=500`, { headers });
-            if (itemsRes.ok) {
-              const itemsData = await itemsRes.json();
-              const results = itemsData.results || [];
-              results.forEach((item: any) => {
-                libraryItemsMap[item.id] = item;
-              });
-            }
-          } catch (e) {
-            // continue
-          }
-        }
-      }
-    }
-
-    // 3. Assemble read/finished audiobooks
-    const readAudiobooks: any[] = [];
-
-    // If user has specific finished items in mediaProgress
-    if (finishedProgress.length > 0) {
-      for (const prog of finishedProgress) {
-        const itemId = prog.mediaItemId || prog.libraryItemId || prog.id;
-        let itemDetail = libraryItemsMap[itemId];
-
-        // If not in map, fetch individually
-        if (!itemDetail) {
-          try {
-            const singleItemRes = await fetch(`${cleanBaseUrl}/api/items/${itemId}`, { headers });
-            if (singleItemRes.ok) {
-              itemDetail = await singleItemRes.json();
-            }
-          } catch (e) {
-            // ignore
-          }
-        }
-
-        const media = itemDetail?.media || {};
-        const meta = media.metadata || {};
-        const title = meta.title || itemDetail?.title || "Finished Audiobook";
-        const author = meta.authorName || meta.authors?.[0]?.name || "Author";
-        const year = parseInt(meta.publishedYear || meta.year || "2021", 10) || 2021;
-        const durationHours = Math.round(((media.duration || prog.duration || 36000) / 3600) * 10) / 10;
-        const genres = Array.isArray(meta.genres) && meta.genres.length > 0 ? meta.genres : ["Audiobook", "Read List"];
-        const tags = Array.isArray(media.tags) && media.tags.length > 0 ? media.tags : ["#Finished", "#MyReadList"];
-
-        // Color computation seed from title + author
-        let hash = 0;
-        const seedStr = `${title}-${author}`;
-        for (let i = 0; i < seedStr.length; i++) {
-          hash = seedStr.charCodeAt(i) + ((hash << 5) - hash);
-        }
-        const r = Math.abs((hash & 0xFF0000) >> 16);
-        const g = Math.abs((hash & 0x00FF00) >> 8);
-        const b = Math.abs(hash & 0x0000FF);
-        const dominantColor = getColorDetails(r, g, b);
-
-        readAudiobooks.push({
-          id: itemId,
-          title,
-          author,
-          year,
-          durationHours: Math.max(1, durationHours),
-          fileSizeBytes: media.size || (350 * 1024 * 1024),
-          folderPath: `${cleanBaseUrl}/api/items/${itemId}`,
-          coverPath: `${cleanBaseUrl}/api/items/${itemId}/cover?token=${encodeURIComponent(apiToken.trim())}`,
-          coverUrl: `${cleanBaseUrl}/api/items/${itemId}/cover?token=${encodeURIComponent(apiToken.trim())}`,
-          hasCoverImage: true,
-          dominantColor,
-          palette: [
-            { hex: dominantColor.hex, colorName: dominantColor.colorName, percentage: 55, rgb: dominantColor.rgb },
-            { hex: '#1E293B', colorName: 'Slate Charcoal', percentage: 25, rgb: [30, 41, 59] },
-            { hex: '#E2E8F0', colorName: 'Parchment', percentage: 20, rgb: [226, 232, 240] }
-          ],
-          description: meta.description || `Finished in your Audiobookshelf reading journey on ${prog.finishedAt ? new Date(prog.finishedAt).toLocaleDateString() : 'recent session'}.`,
-          narrator: meta.narratorName || meta.narrators?.[0] || "Uncredited Narrator",
-          rating: 4.8,
-          audioFormat: "m4b",
-          bitrateKbps: 128,
-          isFinished: true,
-          finishedAt: prog.finishedAt || null
-        });
-      }
-    } else {
-      // Fallback: If mediaProgress is empty, return library items
-      const itemKeys = Object.keys(libraryItemsMap);
-      for (const k of itemKeys.slice(0, 30)) {
-        const item = libraryItemsMap[k];
-        const media = item.media || {};
-        const meta = media.metadata || {};
-        const title = meta.title || item.title || "Audiobook";
-        const author = meta.authorName || meta.authors?.[0]?.name || "Author";
-        const year = parseInt(meta.publishedYear || meta.year || "2021", 10) || 2021;
-        const durationHours = Math.round(((media.duration || 36000) / 3600) * 10) / 10;
-        
-        let hash = 0;
-        const seedStr = `${title}-${author}`;
-        for (let i = 0; i < seedStr.length; i++) {
-          hash = seedStr.charCodeAt(i) + ((hash << 5) - hash);
-        }
-        const r = Math.abs((hash & 0xFF0000) >> 16);
-        const g = Math.abs((hash & 0x00FF00) >> 8);
-        const b = Math.abs(hash & 0x0000FF);
-        const dominantColor = getColorDetails(r, g, b);
-
-        readAudiobooks.push({
-          id: item.id,
-          title,
-          author,
-          year,
-          durationHours: Math.max(1, durationHours),
-          fileSizeBytes: media.size || (350 * 1024 * 1024),
-          folderPath: `${cleanBaseUrl}/api/items/${item.id}`,
-          coverPath: `${cleanBaseUrl}/api/items/${item.id}/cover?token=${encodeURIComponent(apiToken.trim())}`,
-          coverUrl: `${cleanBaseUrl}/api/items/${item.id}/cover?token=${encodeURIComponent(apiToken.trim())}`,
-          hasCoverImage: true,
-          dominantColor,
-          palette: [
-            { hex: dominantColor.hex, colorName: dominantColor.colorName, percentage: 60, rgb: dominantColor.rgb },
-            { hex: '#0F172A', colorName: 'Obsidian', percentage: 25, rgb: [15, 23, 42] },
-            { hex: '#F8FAFC', colorName: 'White', percentage: 15, rgb: [248, 250, 252] }
-          ],
-          description: meta.description || "Audiobook from Audiobookshelf library.",
-          narrator: meta.narratorName || meta.narrators?.[0] || "Narrator",
-          rating: 4.7,
-          audioFormat: "m4b",
-          bitrateKbps: 128,
-          isFinished: true
-        });
-      }
-    }
-
-    res.json({
-      success: true,
-      username: userData.username || "Audiobookshelf User",
-      totalReadBooks: readAudiobooks.length,
-      books: readAudiobooks,
-      serverUrl: cleanBaseUrl
-    });
-
+    const result = await extractAudiobookshelfReadShelf(serverUrl, apiToken);
+    res.json(result);
   } catch (err: any) {
     console.error("Audiobookshelf Connect Error:", err);
     res.status(500).json({ error: err.message || "Failed to communicate with Audiobookshelf server" });
   }
 });
 
-// API: Scan local library folder
+// API: Scan local library folder with sharp real cover color extraction
 app.post("/api/scan-library", async (req, res) => {
   try {
     const { libraryPath } = req.body;
@@ -648,11 +1081,11 @@ app.post("/api/scan-library", async (req, res) => {
               const subDirPath = path.join(trimmedPath, entry.name);
               const subFiles = fs.readdirSync(subDirPath);
               
-              // Look for cover image
-              const coverFile = subFiles.find(f => 
-                /\.(jpg|jpeg|png|webp|avif)$/i.test(f) &&
-                (f.toLowerCase().includes("cover") || f.toLowerCase().includes("folder") || f.toLowerCase().includes("album") || true)
-              );
+              // Look for cover image, prioritizing standard cover.jpg / folder.jpg
+              const coverFile = subFiles.find(f => /^cover\.(jpg|jpeg|png|webp|avif)$/i.test(f))
+                || subFiles.find(f => /^folder\.(jpg|jpeg|png|webp|avif)$/i.test(f))
+                || subFiles.find(f => /cover|folder|front|artwork/i.test(f) && /\.(jpg|jpeg|png|webp|avif)$/i.test(f))
+                || subFiles.find(f => /\.(jpg|jpeg|png|webp|avif)$/i.test(f));
 
               // Look for audio files
               const audioFiles = subFiles.filter(f => /\.(mp3|m4b|m4a|aac|flac|ogg|wav)$/i.test(f));
@@ -667,7 +1100,6 @@ app.post("/api/scan-library", async (req, res) => {
                 }
               }
 
-              // Parse title and author from folder name, e.g., "Author - Title (Year)" or "Title - Author"
               let parsedAuthor = "Unknown Author";
               let parsedTitle = entry.name;
               let parsedYear = 2020 + Math.floor(Math.random() * 4);
@@ -688,28 +1120,59 @@ app.post("/api/scan-library", async (req, res) => {
                 parsedAuthor = parts[1].trim();
               }
 
-              // Generate procedural dominant color seed based on title
-              let hash = 0;
-              for (let i = 0; i < entry.name.length; i++) {
-                hash = entry.name.charCodeAt(i) + ((hash << 5) - hash);
+              let dominantColor: any = null;
+              let palette: any[] = [];
+              let coverUrl = "";
+
+              if (coverFile) {
+                const coverFullPath = path.join(subDirPath, coverFile);
+                coverUrl = `/api/local-cover?filePath=${encodeURIComponent(coverFullPath)}`;
+                try {
+                  const imgBuffer = fs.readFileSync(coverFullPath);
+                  const extracted = await extractColorsFromImageBuffer(imgBuffer);
+                  if (extracted) {
+                    dominantColor = extracted.dominant;
+                    palette = extracted.palette;
+                  }
+                } catch (e) {
+                  // fallback
+                }
               }
-              const r = Math.abs((hash & 0xFF0000) >> 16);
-              const g = Math.abs((hash & 0x00FF00) >> 8);
-              const b = Math.abs(hash & 0x0000FF);
-              const colorInfo = getColorDetails(r, g, b);
+
+              if (!dominantColor) {
+                const seed = `${parsedTitle}:${parsedAuthor}`;
+                let hash = 0;
+                for (let c = 0; c < seed.length; c++) {
+                  hash = (hash << 5) - hash + seed.charCodeAt(c);
+                  hash |= 0;
+                }
+                const h = Math.abs(hash) % 360;
+                const s = 45 + (Math.abs(hash >> 3) % 40);
+                const l = 30 + (Math.abs(hash >> 6) % 35);
+                const [r, g, b] = hslToRgbValues(h, s, l);
+                dominantColor = getColorDetails(r, g, b);
+                palette = [
+                  { hex: dominantColor.hex, colorName: dominantColor.colorName, percentage: 65, rgb: dominantColor.rgb },
+                  { hex: "#1E293B", colorName: "Slate Dark", percentage: 20, rgb: [30, 41, 59] as [number, number, number] },
+                  { hex: "#F8FAFC", colorName: "Ice White", percentage: 15, rgb: [248, 250, 252] as [number, number, number] }
+                ];
+              }
 
               scannedItems.push({
-                id: "scanned-" + Math.abs(hash).toString(36),
+                id: "scanned-" + Math.abs(parsedTitle.split("").reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)).toString(36),
                 title: parsedTitle || entry.name,
                 author: parsedAuthor,
                 year: parsedYear,
                 folderPath: subDirPath,
                 hasCover: !!coverFile,
+                hasCoverImage: !!coverFile,
+                coverUrl,
                 coverFileName: coverFile || null,
                 audioFileCount: audioFiles.length,
                 fileSizeBytes: totalBytes || (450 * 1024 * 1024),
                 durationHours: Math.round(((totalBytes || 450 * 1024 * 1024) / (1024 * 1024 * 35)) * 10) / 10,
-                dominantColor: colorInfo,
+                dominantColor,
+                palette,
                 genres: ["Audiobook", "General"],
                 tags: ["#LocalLibrary", "#Imported"]
               });

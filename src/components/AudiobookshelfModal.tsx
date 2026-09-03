@@ -49,6 +49,13 @@ export const AudiobookshelfModal: React.FC<AudiobookshelfModalProps> = ({
   const [showApiKeyGuide, setShowApiKeyGuide] = useState(false);
   const [copiedExpiry, setCopiedExpiry] = useState(false);
 
+  // Real-time progress tracking state
+  const [progressStatus, setProgressStatus] = useState<string>('Idle');
+  const [progressStep, setProgressStep] = useState<'connecting' | 'connected' | 'listing' | 'extracting' | 'complete' | 'idle'>('idle');
+  const [progressCurrent, setProgressCurrent] = useState<number>(0);
+  const [progressTotal, setProgressTotal] = useState<number>(0);
+  const [currentBookTitle, setCurrentBookTitle] = useState<string>('');
+
   if (!isOpen) return null;
 
   const handleCopyExpiry = () => {
@@ -66,8 +73,121 @@ export const AudiobookshelfModal: React.FC<AudiobookshelfModalProps> = ({
 
     setIsLoading(true);
     setErrorMessage(null);
+    setProgressStatus('Connecting to Audiobookshelf...');
+    setProgressStep('connecting');
+    setProgressCurrent(0);
+    setProgressTotal(0);
+    setCurrentBookTitle('');
 
     try {
+      // 1. Try real-time Server-Sent Events stream for instant progress updates
+      const streamRes = await fetch('/api/abs/fetch-read-books-stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          serverUrl: serverUrl.trim(),
+          apiToken: apiToken.trim()
+        })
+      });
+
+      if (streamRes.ok && streamRes.body) {
+        const reader = streamRes.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        let completedData: any = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const blocks = buffer.split('\n\n');
+          buffer = blocks.pop() || '';
+
+          for (const block of blocks) {
+            const trimmedBlock = block.trim();
+            if (!trimmedBlock || trimmedBlock.startsWith(':')) {
+              // Ignore comments / heartbeat / buffer-flush padding
+              continue;
+            }
+
+            for (const line of trimmedBlock.split('\n')) {
+              const trimmedLine = line.trim();
+              if (trimmedLine.startsWith('data: ')) {
+                const jsonStr = trimmedLine.slice(6).trim();
+                if (!jsonStr) continue;
+
+                let event: any = null;
+                try {
+                  event = JSON.parse(jsonStr);
+                } catch {
+                  continue;
+                }
+
+                if (!event) continue;
+
+                if (event.step === 'error') {
+                  throw new Error(event.error || event.message || 'Error occurred while communicating with Audiobookshelf.');
+                }
+                if (event.step) {
+                  setProgressStep(event.step);
+                }
+                if (event.message) {
+                  setProgressStatus(event.message);
+                }
+                if (event.current !== undefined) {
+                  setProgressCurrent(event.current);
+                }
+                if (event.total !== undefined) {
+                  setProgressTotal(event.total);
+                }
+                if (event.bookTitle) {
+                  setCurrentBookTitle(event.bookTitle);
+                }
+                if (event.step === 'complete' && event.books) {
+                  completedData = event;
+                }
+              }
+            }
+          }
+        }
+
+        if (completedData && completedData.books && completedData.books.length > 0) {
+          onConnectSuccess({
+            serverUrl: completedData.serverUrl || serverUrl,
+            apiToken: apiToken.trim(),
+            username: completedData.username || 'Audiobookshelf User',
+            connectedAt: new Date().toISOString(),
+            readCount: completedData.books.length
+          }, completedData.books);
+
+          onClose();
+          return;
+        }
+
+        if (completedData && (!completedData.books || completedData.books.length === 0)) {
+          throw new Error('Connected to Audiobookshelf, but no audiobooks were found in your listening history or library.');
+        }
+      } else if (!streamRes.ok && streamRes.status !== 404) {
+        // The streaming endpoint responded with an explicit HTTP error (e.g. 401 Unauthorized, 502/504 Timeout)
+        const rawErrText = await streamRes.text();
+        let parsedErr: any = null;
+        try {
+          parsedErr = JSON.parse(rawErrText);
+        } catch {
+          // not JSON
+        }
+        if (streamRes.status === 401 || streamRes.status === 403) {
+          throw new Error('Audiobookshelf authentication failed. Please verify your API token.');
+        }
+        if (streamRes.status === 504 || streamRes.status === 502) {
+          throw new Error('Connection to your Audiobookshelf server timed out. Please verify your server URL and network connectivity.');
+        }
+        throw new Error(parsedErr?.error || parsedErr?.message || `Server returned status ${streamRes.status}: ${rawErrText.slice(0, 120)}`);
+      }
+
+      // 2. Standard JSON Fallback if streaming is completely unavailable or completed without data
+      setProgressStatus('Extracting read books and cover colors...');
       const res = await fetch('/api/abs/fetch-read-books', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -77,10 +197,19 @@ export const AudiobookshelfModal: React.FC<AudiobookshelfModalProps> = ({
         })
       });
 
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        if (res.status === 504 || res.status === 502) {
+          throw new Error('Connection to Audiobookshelf timed out. Please verify your server URL and network accessibility.');
+        }
+        throw new Error(`Audiobookshelf communication failed (Status ${res.status}): ${rawText.slice(0, 120)}`);
+      }
 
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to connect to Audiobookshelf');
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || 'Failed to connect to Audiobookshelf');
       }
 
       if (!data.books || data.books.length === 0) {
@@ -100,6 +229,7 @@ export const AudiobookshelfModal: React.FC<AudiobookshelfModalProps> = ({
       setErrorMessage(err.message || 'Could not connect. Please verify your server URL and token.');
     } finally {
       setIsLoading(false);
+      setProgressStep('idle');
     }
   };
 
@@ -295,6 +425,54 @@ export const AudiobookshelfModal: React.FC<AudiobookshelfModalProps> = ({
               </div>
             )}
 
+            {/* Real-time Connection & Extraction Progress Indicator */}
+            {isLoading && (
+              <div className="p-4 bg-zinc-900 border border-amber-500/40 rounded-xl space-y-2.5 animate-fadeIn">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 font-semibold text-amber-200">
+                    <Loader2 className="w-4 h-4 animate-spin text-amber-300 shrink-0" />
+                    <span className="capitalize">
+                      {progressStep === 'connecting' && '1. Connecting to Server'}
+                      {progressStep === 'connected' && '2. Connected & Authenticated'}
+                      {progressStep === 'listing' && '3. Making Reading List'}
+                      {progressStep === 'extracting' && '4. Extracting Cover Colors'}
+                      {progressStep === 'complete' && '5. Finalizing Treemap'}
+                      {progressStep === 'idle' && 'Processing Shelf...'}
+                    </span>
+                  </div>
+                  {progressTotal > 0 && (
+                    <span className="font-mono text-[11px] text-amber-200/90 font-bold">
+                      {progressCurrent} / {progressTotal} ({Math.min(100, Math.round((progressCurrent / progressTotal) * 100))}%)
+                    </span>
+                  )}
+                </div>
+
+                {/* Progress Bar */}
+                <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden border border-zinc-700">
+                  <div 
+                    className="bg-gradient-to-r from-amber-500 to-amber-300 h-full transition-all duration-300 ease-out rounded-full"
+                    style={{ 
+                      width: progressTotal > 0 
+                        ? `${Math.max(5, Math.min(100, Math.round((progressCurrent / progressTotal) * 100)))}%`
+                        : (progressStep === 'connected' ? '30%' : (progressStep === 'listing' ? '50%' : '15%'))
+                    }}
+                  />
+                </div>
+
+                {/* Meaningful Status Description Label */}
+                <div className="flex items-center justify-between text-[11px] gap-2 pt-0.5">
+                  <span className="text-zinc-300 truncate">
+                    {progressStatus}
+                  </span>
+                  {currentBookTitle && (
+                    <span className="text-[10px] text-amber-300/90 font-mono truncate max-w-[45%] text-right shrink-0">
+                      {currentBookTitle}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Action Buttons */}
             <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
               <button
@@ -305,7 +483,11 @@ export const AudiobookshelfModal: React.FC<AudiobookshelfModalProps> = ({
                 {isLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin text-amber-200/90" />
-                    <span>Connecting & Extracting Read Books...</span>
+                    <span>
+                      {progressStep === 'extracting' && progressTotal > 0 
+                        ? `Extracting ${progressCurrent}/${progressTotal} Audiobooks...`
+                        : (progressStatus || 'Connecting & Extracting Read Books...')}
+                    </span>
                   </>
                 ) : (
                   <>

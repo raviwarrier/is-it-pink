@@ -4,14 +4,12 @@
  */
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Audiobook, TreemapMetric, ActiveFilters, LibraryMode, AudiobookshelfConfig } from './types';
+import { Audiobook, TreemapMetric, ActiveFilters } from './types';
 import { DEFAULT_SAMPLE_AUDIOBOOKS } from './data/sampleAudiobooks';
 import { calculateLibraryStats } from './utils/treemapUtils';
 import { 
   loadLibraryFromLocalStorage, 
-  loadShelfFromLocalStorage, 
   saveLibraryToLocalStorage, 
-  saveShelfToLocalStorage, 
   clearLocalStorageData,
   SavedMapPackage,
   fetchSavedMapsListFromServer,
@@ -25,17 +23,15 @@ import { ChromaticAnalytics } from './components/ChromaticAnalytics';
 import { ExportStudio } from './components/ExportStudio';
 import { PathScannerModal } from './components/PathScannerModal';
 import { AudiobookDetailModal } from './components/AudiobookDetailModal';
-import { AudiobookshelfModal } from './components/AudiobookshelfModal';
 import { MapDataModal } from './components/MapDataModal';
-import { FolderSearch, ShieldCheck, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react';
+import { FolderSearch, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export function App() {
   // Load saved state from localStorage if present
   const savedLibrary = useMemo(() => loadLibraryFromLocalStorage(), []);
-  const savedShelf = useMemo(() => loadShelfFromLocalStorage(), []);
 
   const [hasUserLoadedData, setHasUserLoadedData] = useState<boolean>(() => {
-    return !!(savedLibrary?.books?.length || savedShelf?.books?.length);
+    return !!(savedLibrary?.books?.length);
   });
 
   // Entire Library Books state
@@ -49,18 +45,9 @@ export function App() {
     return savedLibrary?.path || '/media/audiobooks/curated_speculative_fiction';
   });
   
-  // Library Mode Toggle (Option 1: Entire Library vs Option 2: My Reading Analysis)
-  const [libraryMode, setLibraryMode] = useState<LibraryMode>('entireLibrary');
-  const [readListBooks, setReadListBooks] = useState<Audiobook[]>(() => {
-    return savedShelf?.books || [];
-  });
-  const [absConfig, setAbsConfig] = useState<AudiobookshelfConfig | null>(() => {
-    return savedShelf?.config || null;
-  });
-  const [isAbsModalOpen, setIsAbsModalOpen] = useState<boolean>(false);
   const [isMapDataModalOpen, setIsMapDataModalOpen] = useState<boolean>(false);
   const [lastSavedTime, setLastSavedTime] = useState<string | null>(() => {
-    return savedLibrary?.timestamp || savedShelf?.timestamp || null;
+    return savedLibrary?.timestamp || null;
   });
 
   // Feedback Notification Banner
@@ -74,13 +61,8 @@ export function App() {
     }, 4000);
   }, []);
 
-  // Active collection based on toggle mode
-  const currentAudiobooks = useMemo(() => {
-    if (libraryMode === 'readList') {
-      return readListBooks.length > 0 ? readListBooks : entireLibraryBooks.slice(0, 16);
-    }
-    return entireLibraryBooks;
-  }, [libraryMode, readListBooks, entireLibraryBooks]);
+  // Active collection
+  const currentAudiobooks = entireLibraryBooks;
 
   const [currentTab, setCurrentTab] = useState<'dominantColor' | 'multiTreemap' | 'analytics' | 'export'>('dominantColor');
   const [metric, setMetric] = useState<TreemapMetric>('duration');
@@ -105,14 +87,8 @@ export function App() {
           const latestFile = savedFiles[0];
           const pkg = await loadSavedMapFromServer(latestFile.filename);
           if (pkg && pkg.audiobooks && pkg.audiobooks.length > 0) {
-            if (pkg.mode === 'readList') {
-              setReadListBooks(pkg.audiobooks);
-              setLibraryMode('readList');
-            } else {
-              setEntireLibraryBooks(pkg.audiobooks);
-              setLibraryPath(pkg.nameOrPath);
-              setLibraryMode('entireLibrary');
-            }
+            setEntireLibraryBooks(pkg.audiobooks);
+            setLibraryPath(pkg.nameOrPath || '/media/audiobooks/curated_speculative_fiction');
             setHasUserLoadedData(true);
             setLastSavedTime(pkg.exportDate || new Date().toISOString());
             showToast(`Auto-loaded saved map: ${latestFile.nameOrPath} (${pkg.bookCount} books)`, 'success');
@@ -121,14 +97,14 @@ export function App() {
         }
 
         // If no saved file exists on server, check if user has data in localStorage
-        if (!savedLibrary?.books?.length && !savedShelf?.books?.length) {
+        if (!savedLibrary?.books?.length) {
           setHasUserLoadedData(false);
           // Automatically open the library scanner modal at app start
           setIsPathScannerOpen(true);
         }
       } catch (err) {
         console.warn('Startup saved files check error:', err);
-        if (!savedLibrary?.books?.length && !savedShelf?.books?.length) {
+        if (!savedLibrary?.books?.length) {
           setHasUserLoadedData(false);
           setIsPathScannerOpen(true);
         }
@@ -180,9 +156,9 @@ export function App() {
     setIsSaving(true);
     const result = await saveMapToServer({
       nameOrPath: libraryPath,
-      serverUrl: absConfig?.serverUrl || null,
-      username: absConfig?.username || null,
-      mode: libraryMode,
+      serverUrl: null,
+      username: null,
+      mode: 'entireLibrary',
       audiobooks: currentAudiobooks,
       totalDurationHours: stats.totalHours
     });
@@ -197,7 +173,7 @@ export function App() {
   };
 
   // Smart Load Button Logic:
-  // "when load is clicked, if there's only one save file, load it automatically, else show server and/or user names for user to select."
+  // "when load is clicked, if there's only one save file, load it automatically, else show list for user to select."
   const handleSmartLoad = async () => {
     try {
       const files = await fetchSavedMapsListFromServer();
@@ -217,7 +193,6 @@ export function App() {
           setIsMapDataModalOpen(true);
         }
       } else {
-        // Multiple save files exist: show server and/or user names for user to select
         setIsMapDataModalOpen(true);
       }
     } catch (err: any) {
@@ -226,49 +201,12 @@ export function App() {
     }
   };
 
-  // Audiobookshelf Connect Success Handler
-  const handleAbsConnectSuccess = async (config: AudiobookshelfConfig, books: Audiobook[]) => {
-    setAbsConfig(config);
-    setReadListBooks(books);
-    setLibraryMode('readList');
-    setHasUserLoadedData(true);
-    saveShelfToLocalStorage(config, books);
-    setLastSavedTime(new Date().toISOString());
-    handleClearFilters();
-
-    // Auto-save to app folder as [server-url]-data.json
-    saveMapToServer({
-      nameOrPath: config.serverUrl,
-      serverUrl: config.serverUrl,
-      username: config.username,
-      mode: 'readList',
-      audiobooks: books,
-      totalDurationHours: books.reduce((acc, b) => acc + (b.durationHours || 0), 0)
-    }).catch(console.warn);
-  };
-
-  // Audiobookshelf Disconnect Handler (Zero persistence / memory purge)
-  const handleAbsDisconnect = () => {
-    setAbsConfig(null);
-    setReadListBooks([]);
-    setLibraryMode('entireLibrary');
-    saveShelfToLocalStorage(null, []);
-    handleClearFilters();
-  };
-
   // Handle Loading Map Package from JSON File/Paste
   const handleLoadMapData = (pkg: SavedMapPackage) => {
     setHasUserLoadedData(true);
-    if (pkg.mode === 'readList') {
-      setReadListBooks(pkg.audiobooks);
-      setLibraryMode('readList');
-      saveShelfToLocalStorage(absConfig, pkg.audiobooks);
-    } else {
-      setEntireLibraryBooks(pkg.audiobooks);
-      setLibraryPath(pkg.nameOrPath || '/media/audiobooks/imported');
-      setLibraryMode('entireLibrary');
-      saveLibraryToLocalStorage(pkg.nameOrPath || '/media/audiobooks/imported', pkg.audiobooks);
-    }
+    setEntireLibraryBooks(pkg.audiobooks);
+    setLibraryPath(pkg.nameOrPath || '/media/audiobooks/imported');
+    saveLibraryToLocalStorage(pkg.nameOrPath || '/media/audiobooks/imported', pkg.audiobooks);
     setLastSavedTime(new Date().toISOString());
     handleClearFilters();
   };
@@ -278,9 +216,6 @@ export function App() {
     clearLocalStorageData();
     setEntireLibraryBooks(DEFAULT_SAMPLE_AUDIOBOOKS);
     setLibraryPath('/media/audiobooks/curated_speculative_fiction');
-    setReadListBooks([]);
-    setAbsConfig(null);
-    setLibraryMode('entireLibrary');
     setLastSavedTime(null);
     setHasUserLoadedData(false);
     handleClearFilters();
@@ -307,7 +242,7 @@ export function App() {
         </div>
       )}
 
-      {/* Header with Navigation, Option 1/2 Toggle, Metrics, Search & Path Control */}
+      {/* Header with Navigation, Metrics, Search & Path Control */}
       <Header
         currentTab={currentTab}
         onTabChange={setCurrentTab}
@@ -319,14 +254,6 @@ export function App() {
         onMetricChange={setMetric}
         stats={stats}
         filteredCount={filteredBySearch.length}
-        libraryMode={libraryMode}
-        onLibraryModeChange={(mode) => {
-          setLibraryMode(mode);
-          handleClearFilters();
-        }}
-        onOpenAbsModal={() => setIsAbsModalOpen(true)}
-        absConfig={absConfig}
-        readCount={readListBooks.length > 0 ? readListBooks.length : 0}
         onOpenMapDataModal={() => setIsMapDataModalOpen(true)}
         onQuickSave={handleQuickSave}
         onSmartLoad={handleSmartLoad}
@@ -378,7 +305,7 @@ export function App() {
             <ExportStudio
               audiobooks={currentAudiobooks}
               stats={stats}
-              libraryPath={libraryMode === 'readList' ? (absConfig?.serverUrl || 'Audiobookshelf Read List') : libraryPath}
+              libraryPath={libraryPath}
             />
           )}
 
@@ -397,27 +324,18 @@ export function App() {
                   Welcome to Is it Pink?
                 </h2>
                 <p className="text-xs text-zinc-400 leading-relaxed">
-                  Scan your audiobook folder or connect your Audiobookshelf server to analyze cover palettes, genres, and listening stats.
+                  Scan your local audiobook folder to analyze cover palettes, genres, and listening stats.
                 </p>
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
+              <div className="pt-2">
                 <button
                   type="button"
                   onClick={() => setIsPathScannerOpen(true)}
-                  className="flex-1 py-2.5 px-4 bg-zinc-800 hover:bg-zinc-750 text-white font-semibold text-xs rounded-full border border-zinc-700 shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-2.5 px-4 bg-zinc-800 hover:bg-zinc-750 text-white font-semibold text-xs rounded-full border border-zinc-700 shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <FolderSearch className="w-4 h-4 text-amber-200/90" />
-                  <span>Scan Library Folder</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsAbsModalOpen(true)}
-                  className="flex-1 py-2.5 px-4 bg-zinc-850 hover:bg-zinc-800 text-zinc-200 font-semibold text-xs rounded-full border border-zinc-750 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <ShieldCheck className="w-4 h-4 text-zinc-300" />
-                  <span>Audiobookshelf</span>
+                  <span>Scan Audiobook Library</span>
                 </button>
               </div>
             </div>
@@ -434,7 +352,6 @@ export function App() {
         onScanComplete={(newPath, newBooks) => {
           setLibraryPath(newPath);
           setEntireLibraryBooks(newBooks);
-          setLibraryMode('entireLibrary');
           setHasUserLoadedData(true);
           saveLibraryToLocalStorage(newPath, newBooks);
           setLastSavedTime(new Date().toISOString());
@@ -458,20 +375,10 @@ export function App() {
         onClose={() => setIsMapDataModalOpen(false)}
         currentBooks={currentAudiobooks}
         libraryPath={libraryPath}
-        libraryMode={libraryMode}
-        absConfig={absConfig}
+        libraryMode="entireLibrary"
         lastSavedTimestamp={lastSavedTime}
         onLoadMapData={handleLoadMapData}
         onResetToDefault={handleResetToDefault}
-      />
-
-      {/* Audiobookshelf "My Reading Analysis" Modal */}
-      <AudiobookshelfModal
-        isOpen={isAbsModalOpen}
-        onClose={() => setIsAbsModalOpen(false)}
-        config={absConfig}
-        onConnectSuccess={handleAbsConnectSuccess}
-        onDisconnect={handleAbsDisconnect}
       />
 
       {/* Audiobook Inspector / Detail Modal */}
@@ -496,9 +403,9 @@ export function App() {
       <footer className="border-t border-white/5 bg-[#0A0C0F] py-4 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className={`w-1.5 h-1.5 rounded-full ${libraryMode === 'readList' ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'}`}></span>
+            <span className="w-1.5 h-1.5 rounded-full bg-zinc-400"></span>
             <span>
-              Is it Pink? • {libraryMode === 'readList' ? `My Shelf (${absConfig?.username || 'Active Read List'})` : 'Library Mode'}
+              Is it Pink? • Audiobook Library Mode
             </span>
           </div>
           <span className="font-mono text-[11px] text-slate-600">D3 Treemap Engine • Persistent App Storage</span>

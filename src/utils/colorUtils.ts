@@ -291,35 +291,35 @@ export function classifyColor(r: number, g: number, b: number): DominantColorInf
 
   let colorFamily = 'Black';
 
-  // Neutrals / Achromatic & Extreme Luminance Bounds:
-  const isWhiteOrLightGray = (l >= 84) || (l >= 72 && s < 55) || (s < 28 && l > 50);
-  const isBlackOrDarkGray = (l <= 14) || (l <= 22 && s < 55) || (s < 28 && l <= 50);
+  // Neutrals / Achromatic & Extreme Luminance / Saturation Bounds:
+  const isWhiteOrLightGray = (l >= 84) || (l >= 70 && s <= 32) || (s <= 14 && l >= 52);
+  const isBlackOrDarkGray = (l <= 18) || (l <= 28 && s <= 42) || (s <= 16 && l <= 52);
 
   if (isWhiteOrLightGray) {
     colorFamily = 'White';
   } else if (isBlackOrDarkGray) {
     colorFamily = 'Black';
   } else {
-    // Chromatics:
-    if ((h >= 15 && h < 45 && l < 42 && s < 75) || (h >= 15 && h < 40 && l < 32)) {
-      colorFamily = 'Orange'; // Browns in Orange set
+    // Chromatics classified by spectral hue angle:
+    if ((h >= 15 && h < 48 && l < 44 && s < 80) || (h >= 15 && h < 42 && l < 34)) {
+      colorFamily = 'Orange'; // Browns (Espresso, Saddle Brown, Chocolate, Sienna, Cinnamon)
     } else if (h >= 348 || h < 15) {
       colorFamily = 'Red';
     } else if (h >= 15 && h < 45) {
       colorFamily = 'Orange';
-    } else if (h >= 45 && h < 70) {
-      if (l < 32 && s < 60) {
-        colorFamily = 'Orange';
+    } else if (h >= 45 && h < 68) {
+      if (l < 35 && s < 60) {
+        colorFamily = 'Orange'; // Dark Ochre / Raw Umber
       } else {
         colorFamily = 'Yellow';
       }
-    } else if (h >= 70 && h < 165) {
+    } else if (h >= 68 && h < 165) {
       colorFamily = 'Green';
     } else if (h >= 165 && h < 225) {
       colorFamily = 'Blue';
     } else if (h >= 225 && h < 260) {
       colorFamily = 'Indigo';
-    } else if (h >= 260 && h < 295) {
+    } else if (h >= 260 && h < 305) {
       colorFamily = 'Violet';
     } else {
       colorFamily = 'Pink';
@@ -354,7 +354,7 @@ export const COLOR_FAMILY_PALETTES: Record<string, { label: string; bgHex: strin
 };
 
 /**
- * Extract dominant colors from an Image element using canvas sampling and color quantization
+ * Extract dominant colors from an Image element using canvas sampling and CIELAB color quantization
  */
 export async function extractDominantColorFromImage(imgUrl: string): Promise<{ dominant: DominantColorInfo; palette: PaletteSwatch[] }> {
   return new Promise((resolve) => {
@@ -364,7 +364,7 @@ export async function extractDominantColorFromImage(imgUrl: string): Promise<{ d
       try {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        const size = 64; // downsample for performance and color cluster grouping
+        const size = 48; // downsample for performance and accurate clustering
         canvas.width = size;
         canvas.height = size;
 
@@ -375,11 +375,10 @@ export async function extractDominantColorFromImage(imgUrl: string): Promise<{ d
         ctx.drawImage(img, 0, 0, size, size);
         const imgData = ctx.getImageData(0, 0, size, size).data;
 
-        // Simple color bucket quantization
-        const colorBuckets: Record<string, { r: number; g: number; b: number; count: number }> = {};
-        const step = 4; // step pixels
+        // Color cluster quantization with spatial binning
+        const colorBuckets: Record<string, { rSum: number; gSum: number; bSum: number; count: number }> = {};
 
-        for (let i = 0; i < imgData.length; i += step * 4) {
+        for (let i = 0; i < imgData.length; i += 4) {
           const a = imgData[i + 3];
           if (a < 128) continue; // skip transparent
 
@@ -387,45 +386,74 @@ export async function extractDominantColorFromImage(imgUrl: string): Promise<{ d
           const g = imgData[i + 1];
           const b = imgData[i + 2];
 
-          // Quantize to 32 steps per channel
-          const qR = Math.round(r / 24) * 24;
-          const qG = Math.round(g / 24) * 24;
-          const qB = Math.round(b / 24) * 24;
+          // 16-step quantization
+          const qR = Math.min(255, Math.floor(r / 16) * 16 + 8);
+          const qG = Math.min(255, Math.floor(g / 16) * 16 + 8);
+          const qB = Math.min(255, Math.floor(b / 16) * 16 + 8);
           const key = `${qR},${qG},${qB}`;
 
           if (!colorBuckets[key]) {
-            colorBuckets[key] = { r: qR, g: qG, b: qB, count: 0 };
+            colorBuckets[key] = { rSum: 0, gSum: 0, bSum: 0, count: 0 };
           }
+          colorBuckets[key].rSum += r;
+          colorBuckets[key].gSum += g;
+          colorBuckets[key].bSum += b;
           colorBuckets[key].count++;
         }
 
-        const sortedBuckets = Object.values(colorBuckets).sort((a, b) => b.count - a.count);
-        const totalSampled = sortedBuckets.reduce((sum, b) => sum + b.count, 0) || 1;
+        const rawBuckets = Object.values(colorBuckets).sort((a, b) => b.count - a.count);
 
-        if (sortedBuckets.length === 0) {
-          const fallback = classifyColor(30, 30, 40);
+        if (rawBuckets.length === 0) {
+          const fallback = classifyColor(24, 24, 28);
           return resolve({
             dominant: fallback,
             palette: [{ hex: fallback.hex, colorName: fallback.colorName, percentage: 100, rgb: fallback.rgb }]
           });
         }
 
-        const topBucket = sortedBuckets[0];
-        const dominant = classifyColor(topBucket.r, topBucket.g, topBucket.b);
+        // Merge perceptually close clusters using CIELAB Delta-E
+        const uniqueClusters: Array<{ r: number; g: number; b: number; count: number; hex: string }> = [];
 
-        const palette: PaletteSwatch[] = sortedBuckets.slice(0, 5).map(b => {
+        for (const b of rawBuckets) {
+          const avgR = Math.round(b.rSum / b.count);
+          const avgG = Math.round(b.gSum / b.count);
+          const avgB = Math.round(b.bSum / b.count);
+          const hex = rgbToHex(avgR, avgG, avgB);
+
+          let merged = false;
+          for (const u of uniqueClusters) {
+            const dist = calculateColorDistance(u.hex, hex);
+            if (dist < 12) {
+              u.count += b.count;
+              merged = true;
+              break;
+            }
+          }
+
+          if (!merged) {
+            uniqueClusters.push({ r: avgR, g: avgG, b: avgB, count: b.count, hex });
+          }
+        }
+
+        uniqueClusters.sort((a, b) => b.count - a.count);
+
+        const dominantCluster = uniqueClusters[0] || { r: 24, g: 24, b: 28, count: 100, hex: '#18181B' };
+        const dominant = classifyColor(dominantCluster.r, dominantCluster.g, dominantCluster.b);
+
+        const totalSampled = uniqueClusters.reduce((sum, b) => sum + b.count, 0) || 1;
+        const palette: PaletteSwatch[] = uniqueClusters.slice(0, 5).map(b => {
           const swatchColor = classifyColor(b.r, b.g, b.b);
           return {
             hex: swatchColor.hex,
             colorName: swatchColor.colorName,
-            percentage: Math.round((b.count / totalSampled) * 100),
+            percentage: Math.max(5, Math.round((b.count / totalSampled) * 100)),
             rgb: swatchColor.rgb
           };
         });
 
         resolve({ dominant, palette });
       } catch (err) {
-        const fallback = classifyColor(45, 55, 72);
+        const fallback = classifyColor(24, 24, 28);
         resolve({
           dominant: fallback,
           palette: [{ hex: fallback.hex, colorName: fallback.colorName, percentage: 100, rgb: fallback.rgb }]
@@ -434,7 +462,7 @@ export async function extractDominantColorFromImage(imgUrl: string): Promise<{ d
     };
 
     img.onerror = () => {
-      const fallback = classifyColor(40, 40, 50);
+      const fallback = classifyColor(24, 24, 28);
       resolve({
         dominant: fallback,
         palette: [{ hex: fallback.hex, colorName: fallback.colorName, percentage: 100, rgb: fallback.rgb }]

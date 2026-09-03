@@ -16,10 +16,6 @@ import {
   Clock,
   Sparkles,
   BookOpen,
-  BookCheck,
-  Library,
-  ShieldCheck,
-  Settings2,
   FileJson,
   FolderDown,
   Download
@@ -38,11 +34,11 @@ interface HeaderProps {
   onMetricChange: (m: TreemapMetric) => void;
   stats: LibraryStats;
   filteredCount: number;
-  libraryMode: LibraryMode;
-  onLibraryModeChange: (mode: LibraryMode) => void;
-  onOpenAbsModal: () => void;
-  absConfig: AudiobookshelfConfig | null;
-  readCount: number;
+  libraryMode?: LibraryMode;
+  onLibraryModeChange?: (mode: LibraryMode) => void;
+  onOpenAbsModal?: () => void;
+  absConfig?: AudiobookshelfConfig | null;
+  readCount?: number;
   onOpenMapDataModal: () => void;
   onQuickSave?: () => void;
   onSmartLoad?: () => void;
@@ -59,12 +55,7 @@ export const Header: React.FC<HeaderProps> = ({
   metric,
   onMetricChange,
   stats,
-  filteredCount,
-  libraryMode,
-  onLibraryModeChange,
-  onOpenAbsModal,
-  absConfig,
-  readCount,
+  filteredCount: _filteredCount,
   onOpenMapDataModal,
   onQuickSave,
   onSmartLoad,
@@ -93,112 +84,31 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Center: iOS Style Segmented Switch (High Contrast & Modern Radius) */}
-          <div className="flex items-center justify-center">
-            <div 
-              id="ios-library-shelf-toggle"
-              className="inline-flex items-center p-1 bg-[#090B0E] border border-zinc-750 rounded-lg shadow-inner relative select-none"
-              role="group"
-              aria-label="Library view mode toggle"
-            >
-              {/* Sliding pill thumb with high contrast */}
-              <div
-                className={`absolute top-1 bottom-1 rounded-md transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] shadow-sm bg-zinc-200 border border-white ${
-                  libraryMode === 'entireLibrary'
-                    ? 'left-1 w-[88px] sm:w-[96px]'
-                    : 'left-[92px] sm:left-[100px] w-[98px] sm:w-[106px]'
-                }`}
-              />
-
-              {/* Segment 1: Library */}
-              <button
-                id="ios-toggle-library"
-                type="button"
-                onClick={() => onLibraryModeChange('entireLibrary')}
-                className={`relative z-10 w-[88px] sm:w-[96px] py-1.5 rounded-md text-xs font-semibold tracking-tight transition-colors duration-200 flex items-center justify-center gap-1.5 cursor-pointer ${
-                  libraryMode === 'entireLibrary'
-                    ? 'text-zinc-950 font-bold'
-                    : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                <Library className={`w-3.5 h-3.5 ${libraryMode === 'entireLibrary' ? 'text-zinc-900' : 'text-zinc-400'}`} />
-                <span>Library</span>
-              </button>
-
-              {/* Segment 2: My Shelf */}
-              <button
-                id="ios-toggle-myshelf"
-                type="button"
-                onClick={() => {
-                  onLibraryModeChange('readList');
-                  if (!absConfig?.username) {
-                    onOpenAbsModal();
-                  }
-                }}
-                className={`relative z-10 w-[98px] sm:w-[106px] py-1.5 rounded-md text-xs font-semibold tracking-tight transition-colors duration-200 flex items-center justify-center gap-1.5 cursor-pointer ${
-                  libraryMode === 'readList'
-                    ? 'text-zinc-950 font-bold'
-                    : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                <BookCheck className={`w-3.5 h-3.5 ${libraryMode === 'readList' ? 'text-zinc-900' : 'text-zinc-400'}`} />
-                <span>My Shelf</span>
-                {absConfig?.username && (
-                  <span className={`w-1.5 h-1.5 rounded-full ${libraryMode === 'readList' ? 'bg-zinc-900' : 'bg-zinc-400'}`}></span>
-                )}
-              </button>
-
-              {/* ABS Settings gear if connected */}
-              <button
-                type="button"
-                onClick={onOpenAbsModal}
-                title="Audiobookshelf connection settings (Zero-Trace)"
-                className="relative z-10 p-1.5 ml-0.5 text-zinc-400 hover:text-white rounded-md hover:bg-white/5 transition-colors cursor-pointer"
-              >
-                <Settings2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Right: Path Selector & Library Quick Action */}
+          {/* Right: Path Selector & Library Actions */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {libraryMode === 'entireLibrary' ? (
-              <>
-                <button
-                  id="library-path-btn"
-                  onClick={onOpenPathScanner}
-                  title="Click to enter or change library folder path"
-                  className="flex items-center gap-2 px-3.5 py-2 bg-zinc-850 hover:bg-zinc-800 text-zinc-200 border border-zinc-700/70 rounded-lg text-xs font-mono transition-all group max-w-[200px] sm:max-w-[280px] truncate cursor-pointer"
-                >
-                  <FolderSearch className="w-3.5 h-3.5 text-zinc-400 group-hover:text-zinc-200 transition-colors shrink-0" />
-                  <span className="truncate text-zinc-300">
-                    {libraryPath}
-                  </span>
-                  <span className="text-[10px] px-2 py-0.5 bg-white/5 text-zinc-400 rounded-md shrink-0">
-                    Change
-                  </span>
-                </button>
+            <button
+              id="library-path-btn"
+              onClick={onOpenPathScanner}
+              title="Click to enter or change library folder path"
+              className="flex items-center gap-2 px-3.5 py-2 bg-zinc-850 hover:bg-zinc-800 text-zinc-200 border border-zinc-700/70 rounded-lg text-xs font-mono transition-all group max-w-[200px] sm:max-w-[280px] truncate cursor-pointer"
+            >
+              <FolderSearch className="w-3.5 h-3.5 text-zinc-400 group-hover:text-zinc-200 transition-colors shrink-0" />
+              <span className="truncate text-zinc-300">
+                {libraryPath}
+              </span>
+              <span className="text-[10px] px-2 py-0.5 bg-white/5 text-zinc-400 rounded-md shrink-0">
+                Change
+              </span>
+            </button>
 
-                <button
-                  onClick={onOpenPathScanner}
-                  className="hidden sm:flex items-center gap-1.5 px-4 py-2 bg-zinc-800 hover:bg-zinc-750 text-zinc-100 text-xs font-medium rounded-lg border border-zinc-700 transition-colors shrink-0 shadow-sm cursor-pointer"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-200/90" />
-                  <span>Scan Folder</span>
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={onOpenAbsModal}
-                className="flex items-center gap-2 px-3.5 py-2 bg-zinc-850 hover:bg-zinc-800 text-zinc-200 border border-zinc-700/80 rounded-lg text-xs font-medium transition-all cursor-pointer"
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-zinc-300" />
-                <span>{absConfig?.username ? `ABS: ${absConfig.username}` : 'Connect Audiobookshelf'}</span>
-                <span className="text-[10px] px-2 py-0.5 bg-zinc-750 text-zinc-300 rounded-md">
-                  {readCount} books
-                </span>
-              </button>
-            )}
+            <button
+              id="header-scan-folder-btn"
+              onClick={onOpenPathScanner}
+              className="hidden sm:flex items-center gap-1.5 px-4 py-2 bg-zinc-800 hover:bg-zinc-750 text-zinc-100 text-xs font-medium rounded-lg border border-zinc-700 transition-colors shrink-0 shadow-sm cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-200/90" />
+              <span>Scan Folder</span>
+            </button>
 
             {/* Quick Save & Load Buttons */}
             <div className="flex items-center gap-1.5">
@@ -207,7 +117,7 @@ export const Header: React.FC<HeaderProps> = ({
                   id="header-quick-save-btn"
                   onClick={onQuickSave}
                   disabled={isSaving}
-                  title="Auto-save current library to local app folder as [server-url]-data.json"
+                  title="Auto-save current library to local app folder as [name]-data.json"
                   className="flex items-center gap-1.5 px-3 py-2 bg-zinc-850 hover:bg-zinc-800 text-zinc-200 border border-zinc-750 hover:border-zinc-700 rounded-lg text-xs font-semibold transition-all shadow-xs cursor-pointer disabled:opacity-50"
                 >
                   <FolderDown className={`w-3.5 h-3.5 text-amber-200/90 ${isSaving ? 'animate-bounce' : ''}`} />

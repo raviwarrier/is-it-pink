@@ -28,12 +28,13 @@ export const BookCoverOrColorBlock: React.FC<BookCoverOrColorBlockProps> = ({
   useEffect(() => {
     setImgError(false);
     setImgLoaded(false);
-  }, [book.id, book.coverUrl]);
+  }, [book.id, book.coverUrl, book.coverPath]);
 
   const hex = book.dominantColor?.hex || '#3b82f6';
   const colorName = book.dominantColor?.colorName || 'Color Shade';
   const textColor = getContrastTextColor(hex);
-  const hasCoverUrl = Boolean(book.coverUrl && book.coverUrl.trim().length > 0);
+  const effectiveCoverUrl = book.coverUrl || book.coverPath || '';
+  const hasCoverUrl = Boolean(effectiveCoverUrl && effectiveCoverUrl.trim().length > 0);
   const showCoverImage = hasCoverUrl && !imgError;
 
   // Initials / Monogram for solid block fallback
@@ -55,7 +56,7 @@ export const BookCoverOrColorBlock: React.FC<BookCoverOrColorBlockProps> = ({
       >
         {showCoverImage ? (
           <img
-            src={book.coverUrl}
+            src={effectiveCoverUrl}
             alt={book.title}
             onError={() => setImgError(true)}
             onLoad={() => setImgLoaded(true)}
@@ -92,7 +93,7 @@ export const BookCoverOrColorBlock: React.FC<BookCoverOrColorBlockProps> = ({
       >
         {showCoverImage ? (
           <img
-            src={book.coverUrl}
+            src={effectiveCoverUrl}
             alt={book.title}
             onError={() => setImgError(true)}
             onLoad={() => setImgLoaded(true)}
@@ -136,7 +137,7 @@ export const BookCoverOrColorBlock: React.FC<BookCoverOrColorBlockProps> = ({
     >
       {showCoverImage ? (
         <img
-          src={book.coverUrl}
+          src={effectiveCoverUrl}
           alt={book.title}
           onError={() => setImgError(true)}
           onLoad={() => setImgLoaded(true)}
