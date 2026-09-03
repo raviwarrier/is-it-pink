@@ -11,7 +11,7 @@ dotenv.config();
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const app = express();
-const PORT = 3000;
+const PORT: number = 4260;
 
 app.use(express.json({ limit: "25mb" }));
 
@@ -1281,6 +1281,19 @@ async function startServer() {
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Audiobook Treemap Server running on port ${PORT}`);
   });
+
+  // Secondary listener on port 3000 for AI Studio container ingress reverse proxy.
+  // In local environments where port 3000 is occupied by other npm apps, this fails gracefully.
+  if (PORT !== 3000) {
+    const ingressServer = app.listen(3000, "0.0.0.0", () => {
+      console.log("Container preview listener active on port 3000");
+    });
+    ingressServer.on("error", (err: any) => {
+      if (err.code !== "EADDRINUSE") {
+        console.warn("Container port 3000 listener warning:", err.message);
+      }
+    });
+  }
 }
 
 startServer();
